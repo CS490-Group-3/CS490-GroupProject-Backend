@@ -6,8 +6,8 @@ from flask_cors import CORS
 from config import FLASK_DEBUG
 import sys
 
-# Import blueprints
-from routes import health_bp
+
+from routes import health_bp, auth_bp
 
 def create_app():
     app = Flask(__name__)
@@ -20,6 +20,7 @@ def create_app():
 
     # Register blueprints
     app.register_blueprint(health_bp)
+    app.register_blueprint(auth_bp)
     
     # Error handlers
     @app.errorhandler(404)
@@ -40,8 +41,10 @@ def create_app():
     
     return app
 
+
 # Create app instance
 app = create_app()
+
 
 if __name__ == "__main__":
     try:
@@ -49,7 +52,7 @@ if __name__ == "__main__":
         print("Starting Salon Booking Platform Backend...")
         print(f"Debug mode: {FLASK_DEBUG}")
         print("=" * 50)
-        app.run(debug=FLASK_DEBUG, host='0.0.0.0', port=5000)
+        app.run(debug=FLASK_DEBUG, host='0.0.0.0', port=5001)
     except Exception as e:
         print(f"Failed to start application: {e}", file=sys.stderr)
         sys.exit(1)
