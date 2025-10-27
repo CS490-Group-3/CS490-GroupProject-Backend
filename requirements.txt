@@ -5,6 +5,11 @@ flask-cors==6.0.1
 # Database & Authentication
 supabase==2.22.1
 PyJWT==2.10.1
+gotrue-py
 
 # Configuration
 python-dotenv==1.1.1
+
+# Production Server
+gunicorn==23.0.0
+
