@@ -8,3 +8,6 @@ PyJWT==2.10.1
 
 # Configuration
 python-dotenv==1.1.1
+
+# Email validation for Pydantic
+email-validator==2.1.0
