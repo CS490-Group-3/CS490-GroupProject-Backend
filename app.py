@@ -7,7 +7,8 @@ from config import FLASK_DEBUG
 import sys
 
 
-from routes import health_bp, auth_bp
+from routes import health_bp, auth_bp, salon_bp
+
 
 def create_app():
     app = Flask(__name__)
@@ -21,7 +22,9 @@ def create_app():
     # Register blueprints
     app.register_blueprint(health_bp)
     app.register_blueprint(auth_bp)
-    
+    app.register_blueprint(salon_bp)
+
+
     # Error handlers
     @app.errorhandler(404)
     def not_found(error):
