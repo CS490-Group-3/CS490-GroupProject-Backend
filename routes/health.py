@@ -20,7 +20,7 @@ def home():
 @health_bp.route('/health', methods=['GET'])
 def health_check():
     try:
-        response = supabase.table('users').select("count", count="exact").limit(0).execute()
+        response = supabase.table('user_details').select("count", count="exact").limit(0).execute()
 
         return jsonify({
             "status": "healthy",

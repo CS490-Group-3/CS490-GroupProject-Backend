@@ -122,6 +122,35 @@ class AuthService:
             return False, str(e)
     
     @staticmethod
+    def refresh_token(refresh_token: str) -> Tuple[Dict, Optional[str]]:
+        """
+        Refresh access token using refresh token.
+        
+        Args:
+            refresh_token: Refresh token from login
+        
+        Returns:
+            Tuple of (token_data, error_message)
+        """
+        try:
+            response = supabase.auth.refresh_session(refresh_token)
+            
+            if response.session:
+                return {
+                    "access_token": response.session.access_token,
+                    "refresh_token": response.session.refresh_token,
+                    "expires_in": response.session.expires_in,
+                    "token_type": "bearer"
+                }, None
+            else:
+                return None, "Failed to refresh token"
+                
+        except AuthApiError as e:
+            return None, "Invalid or expired refresh token"
+        except Exception as e:
+            return None, f"Token refresh failed: {str(e)}"
+    
+    @staticmethod
     def get_user_from_token(access_token: str) -> Tuple[Dict, Optional[str]]:
         """
         Get user data from access token.
