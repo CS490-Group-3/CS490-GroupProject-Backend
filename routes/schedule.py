@@ -13,7 +13,7 @@ from middleware import login_required, role_required, get_current_user
 schedule_bp = Blueprint('schedule', __name__, url_prefix='/api/schedule')
 
 @schedule_bp.route('/availability/<barber_id>', methods=['GET'])
-@login_required
+@login_required()
 def get_availability(barber_id):
     """
     Get barber weekly availability.
@@ -40,7 +40,7 @@ def get_availability(barber_id):
     
     
 @schedule_bp.route('/availability', methods=['POST'])
-@login_required
+@login_required()
 @role_required(['barber', 'admin', 'owner'])
 def create_availability():
     """
@@ -85,7 +85,7 @@ def create_availability():
         return jsonify({"error": str(e)}), 500
     
 @schedule_bp.route('/availability', methods=['PATCH'])
-@login_required
+@login_required()
 @role_required(['barber', 'admin', 'owner'])
 def update_availability():
     """
