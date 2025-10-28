@@ -12,7 +12,18 @@ from .user import (
     AuthResponse,
     UserRole
 )
+from .appointment import (
+    AppointmentCreateRequest,
+    AppointmentUpdateRequest,
+    AppointmentResponse
+)
 
+from .schedule import (
+    BarberAvailabilityCreateRequest,
+    BarberAvailabilityUpdateRequest,
+    BarberUnavailabilityCreateRequest,
+    BarberUnavailabilityUpdateRequest
+)
 __all__ = [
     'UserSignupRequest',
     'UserLoginRequest',
@@ -21,6 +32,13 @@ __all__ = [
     'UserProfileResponse',
     'UserDetailsResponse',
     'AuthResponse',
-    'UserRole'
+    'UserRole',
+    'AppointmentCreateRequest',
+    'AppointmentUpdateRequest',
+    'AppointmentResponse',
+    'BarberAvailabilityCreateRequest',
+    'BarberAvailabilityUpdateRequest',
+    'BarberUnavailabilityCreateRequest',
+    'BarberUnavailabilityUpdateRequest'
 ]
 

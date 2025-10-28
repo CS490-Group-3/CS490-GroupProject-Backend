@@ -7,8 +7,7 @@ from config import FLASK_DEBUG
 import sys
 
 
-from routes import health_bp, auth_bp, salon_bp
-
+from routes import health_bp, auth_bp, appointments_bp, schedule_bp, salon_bp, upload_bp
 
 def create_app():
     app = Flask(__name__)
@@ -23,7 +22,9 @@ def create_app():
     app.register_blueprint(health_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(salon_bp)
-
+    app.register_blueprint(appointments_bp)
+    app.register_blueprint(schedule_bp)
+    app.register_blueprint(upload_bp)
 
     # Error handlers
     @app.errorhandler(404)
