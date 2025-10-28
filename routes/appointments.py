@@ -11,7 +11,7 @@ from middleware import login_required, role_required, get_current_user, get_owne
 appointments_bp = Blueprint('appointments', __name__, url_prefix='/api/appointments')
 
 @appointments_bp.route('/', methods=['GET'])
-@login_required
+@login_required()
 @role_required(['customer', 'admin', 'owner', 'barber'])
 def list_appointments():
     """
