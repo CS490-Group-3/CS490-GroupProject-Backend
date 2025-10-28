@@ -48,7 +48,7 @@ def list_appointments():
         return jsonify({"error": str(e)}), 500
 
 @appointments_bp.route('/', methods=['PATCH'])
-@login_required
+@login_required()
 @role_required(['customer', 'admin', 'owner', 'barber'])
 def update_appointment():
     """
@@ -84,7 +84,7 @@ def update_appointment():
         return jsonify({"error": str(e)}), 500
 
 @appointments_bp.route('/<id>/<status>', methods=['PATCH'])
-@login_required
+@login_required()
 @role_required(['customer', 'admin', 'owner', 'barber'])
 def change_appointment_status(id, status):
     """
