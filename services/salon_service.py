@@ -1,5 +1,6 @@
 from config import supabase
 from datetime import datetime
+from services.upload_file import StorageService
 import uuid
 
 class SalonService:
@@ -8,11 +9,15 @@ class SalonService:
     #------------------------------------1. SALONS
     """registration and appeals made by salon owners """
     @staticmethod
-    def register_salon(data, owner_id, owner_email=None):
+    def register_salon(data, owner_id, owner_email=None, logo_file=None, license_file=None):
         """
         Register a new salon using validated Pydantic data.
         """
-        supabase.table("salons").insert({
+        license_url = data.license_url
+        logo_url = data.logo_url if hasattr(data, "logo_url") else None
+
+
+        new = supabase.table("salons").insert({
             "name": data.name,
             "address": data.address,
             "city": data.city,
@@ -23,19 +28,32 @@ class SalonService:
             "description": data.description,
             "owner_id": owner_id,
             "status": "pending",
-            "license_url": data.license_url,
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
         }).execute()
 
+        salon_id = new.data[0]["id"]
+
+
+        updates = {}
+        if license_file:
+            updates["license_url"] = StorageService.upload_file(license_file, salon_id, "license")
+        elif license_url:
+            updates["license_url"] = license_url
+
+        if logo_file:
+            updates["logo_url"] = StorageService.upload_file(logo_file, salon_id, "logo")
+
+        if updates:
+            supabase.table("salons").update(updates).eq("id", salon_id).execute()
 
 
         admins = supabase.table("user_profiles").select("user_id").eq("role", "admin").execute()
         for admin in admins.data:
             supabase.table("notifications").insert({
                 "id": str(uuid.uuid4()),
-                "user_id": admin["id"],
-                "notification_type": "salon_application",
+                "user_id": admin["user_id"],
+                "notification_type": "salon_verification",
                 "title": "New Salon Registration",
                 "message": f"A new salon '{data.name}' has been submitted for approval.",
                 "status": "pending",
@@ -43,13 +61,13 @@ class SalonService:
                 "created_at": datetime.utcnow().isoformat()
             }).execute()
 
-        return {"message": "Salon registered successfully", "salon_id": salon_id, "status": "pending"}
+        return {"message": "Salon registered successfully", "salon_id": salon_id,  "verification_status": "pending"}
 
 
     #Admin notification format may need to be changed
 
-    
-    def appeal_salon(salon_id, user_id):
+    @staticmethod
+    def appeal_salon(salon_id, user_id, updates=None, logo_file=None, license_file=None):
 
         salon_response = supabase.table("salons").select("status, owner_id, name").eq("id", salon_id).single().execute()
 
@@ -60,23 +78,31 @@ class SalonService:
 
         if salon["status"] != "rejected":
             return {
-                "error": f"Appeals are only allowed for rejected salons (current status: '{salon['status']}')."
-            }, 400
+                "error": f"Appeals are only allowed for rejected salons (current status: '{salon['status']}')."},400
 
         if salon["owner_id"] != user_id:
             return {"error": "You are not authorized to appeal this salon."}, 403
+        
 
-        supabase.table("salons").update({
-            "status": "pending",
-            "updated_at": datetime.utcnow().isoformat()
-        }).eq("id", salon_id).execute()
+        allowed_fields = ["name", "description", "address", "phone", "license_url", "logo_url"]
+        valid_updates = {k: v for k, v in (updates or {}).items() if k in allowed_fields}
+
+        if license_file:
+            valid_updates["license_url"] = StorageService.upload_file(license_file, salon_id, "license")
+        if logo_file:
+            valid_updates["logo_url"] = StorageService.upload_file(logo_file, salon_id, "logo")
+
+        if valid_updates:
+            valid_updates["status"] = "pending"
+            supabase.table("salons").update(valid_updates).eq("id", salon_id).execute()
 
         admins = supabase.table("user_profiles").select("user_id").eq("role", "admin").execute()
+
         for admin in admins.data:
             supabase.table("notifications").insert({
                 "id": str(uuid.uuid4()),
-                "user_id": admin["id"],
-                "notification_type": "salon_appeal",
+                "user_id": admin["user_id"],
+                "notification_type": "salon_verification",
                 "title": "Salon Appeal Submitted",
                 "message": f"Salon '{salon['name']}' has appealed its rejection.",
                 "status": "pending",
@@ -132,7 +158,7 @@ class SalonService:
         supabase.table("notifications").insert({
             "id": str(uuid.uuid4()),
             "user_id": owner_id,
-            "notification_type": "salon_rejection",
+            "notification_type": "salon_verification",
             "title": "Salon Application Rejected",
             "message": f"Your salon '{salon.data['name']}' was rejected. Reason: {reason}",
             "status": "pending",
@@ -142,3 +168,9 @@ class SalonService:
 
         return {"message": "Salon rejected", "reason": reason}
 
+
+  
+    @staticmethod
+    def get_pending_salons():
+        response = supabase.table("salons").select("*").eq("status", "pending").execute()
+        return response.data
