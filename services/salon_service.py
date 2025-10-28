@@ -174,3 +174,19 @@ class SalonService:
     def get_pending_salons():
         response = supabase.table("salons").select("*").eq("status", "pending").execute()
         return response.data
+
+
+    @staticmethod
+    def get_status_history(salon_id: str):
+        try:
+            response = (
+                supabase.table("notifications")
+                .select("title, message, created_at, user_id")
+                .eq("notification_type", "salon_verification")
+                .eq("related_id", str(salon_id))
+                .order("created_at", desc=False)
+                .execute()
+            )
+            return {"timeline": response.data, "count": len(response.data)}
+        except Exception as e:
+            raise Exception(f"Failed to fetch salon status history: {e}")

@@ -130,3 +130,18 @@ def get_pending_salons_route():
         return jsonify(data), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
+
+#get a salons verification history
+@salon_bp.route("/<uuid:salon_id>/status-history", methods=["GET"])
+@login_required()
+@role_required(['admin'])
+def get_salon_status_history(salon_id):
+    try:
+        result = SalonService.get_status_history(salon_id) 
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
