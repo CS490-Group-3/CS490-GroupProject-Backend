@@ -1,0 +1,67 @@
+---
+tags:
+  - Uploads
+summary: Refresh an expiring signed URL
+description: >
+  Allows an authenticated user to refresh or regenerate a signed URL for an existing file in storage.  
+  Useful when a file's signed access link is about to expire.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+  - in: body
+    name: body
+    required: true
+    description: The JSON payload containing the filepath of the stored file
+    schema:
+      type: object
+      required:
+        - filepath
+      properties:
+        filepath:
+          type: string
+          description: Path to the file in Supabase storage
+          example: salons/b534633a-23bc-4479-968f-8a004615821c/license.pdf
+responses:
+  200:
+    description: Signed URL refreshed successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Signed URL refreshed successfully"
+        signed_url:
+          type: string
+          example: "https://supabase.io/storage/v1/object/sign/salons/license.pdf?token=abc123"
+  400:
+    description: Missing filepath or invalid request
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Missing 'filepath'"
+  403:
+    description: Unauthorized access
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Authentication required"
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred while refreshing signed URL."
+

@@ -1,0 +1,91 @@
+---
+tags:
+  - Salon
+summary: Submit an appeal for a rejected salon application
+description: >
+  Allows an authenticated **salon_owner** to appeal a previously rejected salon application.  
+  The owner can optionally resubmit updated salon details and new license or logo files.
+consumes:
+  - application/json
+  - multipart/form-data
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: salon_id
+    type: string
+    required: true
+    description: The unique ID of the salon being appealed
+    example: b534633a-23bc-4479-968f-8a004615821c
+
+  - in: formData
+    name: updates
+    type: object
+    description: >
+      Optional salon fields to update before resubmitting (only name, description, address, phone_number, license_url, image_url are allowed)
+    example:
+      name: "Swag Shop Reloaded"
+      description: "Resubmitted application with corrected license info."
+      phone_number: "9735559999"
+
+  - in: formData
+    name: logo
+    type: file
+    description: Optional updated salon logo image
+
+  - in: formData
+    name: license
+    type: file
+    description: Optional updated business license file
+
+responses:
+  200:
+    description: Appeal submitted successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Appeal submitted successfully"
+        new_status:
+          type: string
+          example: "pending"
+  400:
+    description: Appeal not allowed or invalid input
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Appeals are only allowed for rejected salons (current status: 'approved')."
+  403:
+    description: Unauthorized salon owner
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "You are not authorized to appeal this salon."
+  404:
+    description: Salon not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Salon not found"
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred while submitting appeal."
+

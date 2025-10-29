@@ -1,0 +1,81 @@
+---
+tags:
+  - Salon
+summary: Reject a pending salon application
+description: >
+  Allows an authenticated **admin** user to reject a pending salon application.  
+  The admin can provide an optional rejection reason.  
+  A notification is sent to the salon owner upon rejection.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token (admin only)
+    required: true
+    type: string
+
+  - in: path
+    name: salon_id
+    type: string
+    required: true
+    description: The unique ID of the salon to reject
+    example: b534633a-23bc-4479-968f-8a004615821c
+
+  - in: body
+    name: body
+    required: false
+    description: Optional rejection reason
+    schema:
+      type: object
+      properties:
+        reason:
+          type: string
+          example: "Missing valid business license"
+responses:
+  200:
+    description: Salon rejected successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Salon rejected successfully"
+        reason:
+          type: string
+          example: "Missing valid business license"
+  400:
+    description: Invalid salon or request
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Salon is already approved and cannot be rejected."
+  403:
+    description: Forbidden - user is not an admin
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Admin privileges required."
+  404:
+    description: Salon not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Salon not found."
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred while rejecting salon."
+

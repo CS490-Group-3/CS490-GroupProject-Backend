@@ -1,0 +1,68 @@
+---
+tags:
+  - Salon
+summary: Approve a pending salon application
+description: >
+  Allows an authenticated **admin** user to approve a pending salon application.  
+  This action activates the salon portal and notifies the salon owner.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token (admin only)
+    required: true
+    type: string
+
+  - in: path
+    name: salon_id
+    type: string
+    required: true
+    description: The unique ID of the salon to approve
+    example: b534633a-23bc-4479-968f-8a004615821c
+
+responses:
+  200:
+    description: Salon approved successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Salon approved successfully"
+        salon:
+          type: object
+          properties:
+            id:
+              type: string
+              example: "b534633a-23bc-4479-968f-8a004615821c"
+            status:
+              type: string
+              example: "approved"
+  403:
+    description: Forbidden - user is not an admin
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Admin privileges required."
+  404:
+    description: Salon not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Salon not found."
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred while approving salon."
+

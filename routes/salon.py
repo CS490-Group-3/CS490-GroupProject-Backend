@@ -3,6 +3,7 @@ from pydantic import ValidationError
 from middleware.auth import login_required, role_required
 from models.salon import SalonRegisterRequest
 from services.salon_service import SalonService
+from flasgger.utils import swag_from
 
 salon_bp = Blueprint("salon_bp", __name__, url_prefix="/api/salons")
 
@@ -10,10 +11,11 @@ salon_bp = Blueprint("salon_bp", __name__, url_prefix="/api/salons")
 
 #-----------------------------------1. SALONS (salon owners) 
 
-
 # Salon registration (requires user auth)
+#@login_required(['salon_owner'])
 @salon_bp.route("/apply", methods=["POST"])
 @login_required()
+@swag_from("../docs/salon_apply.yml") 
 def register_salon():
     """
     Allows an authenticated salon_owner to submit a new salon application.
@@ -56,8 +58,10 @@ def register_salon():
 
 
 # Salon owner appeals
+#@login_required(['salon_owner'])
 @salon_bp.route("/<salon_id>/appeal", methods=["PUT"])
 @login_required()
+@swag_from("../docs/salon_appeal.yml")
 def appeal_salon(salon_id):
     try:
         user_id = g.user["sub"]
@@ -86,6 +90,7 @@ def appeal_salon(salon_id):
 @salon_bp.route("/<salon_id>/approve", methods=["PATCH"])
 @login_required()
 @role_required(['admin'])
+@swag_from("../docs/salon_approve.yml")
 def approve_salon(salon_id):
     try:
         approver_id = g.user["sub"]
@@ -101,6 +106,7 @@ def approve_salon(salon_id):
 @salon_bp.route("/<salon_id>/reject", methods=["PATCH"])
 @login_required()
 @role_required(['admin'])
+@swag_from("../docs/salon_reject.yml")
 def reject_salon(salon_id):
     try:    
         approver_id = g.user["sub"]
@@ -118,6 +124,7 @@ def reject_salon(salon_id):
 #view pending applications
 @salon_bp.route("/pending", methods=["GET"])
 @role_required(['admin'])
+@swag_from("../docs/salon_pending.yml")
 def get_pending_salons_route():
     try:
 
@@ -138,6 +145,7 @@ def get_pending_salons_route():
 @salon_bp.route("/<uuid:salon_id>/status-history", methods=["GET"])
 @login_required()
 @role_required(['admin'])
+@swag_from("../docs/salon_status_history.yml")
 def get_salon_status_history(salon_id):
     try:
         result = SalonService.get_status_history(salon_id) 

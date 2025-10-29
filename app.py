@@ -5,13 +5,14 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from config import FLASK_DEBUG
 import sys
-
+from flasgger import Swagger
 
 from routes import health_bp, auth_bp, appointments_bp, schedule_bp, salon_bp, upload_bp
 
 def create_app():
     app = Flask(__name__)
-    
+    #swagger section
+    swagger = Swagger(app, template_file="swagger_config.yml")    
     # Do not sort JSON response keys
     app.config['JSON_SORT_KEYS'] = False
     
