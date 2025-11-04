@@ -5,6 +5,13 @@ flask-cors==6.0.1
 # Database & Authentication
 supabase==2.22.1
 PyJWT==2.10.1
+gotrue==2.12.4
 
 # Configuration
 python-dotenv==1.1.1
+
+# Production Server
+gunicorn==23.0.0
+
+# Email validation for Pydantic
+email-validator==2.1.0
