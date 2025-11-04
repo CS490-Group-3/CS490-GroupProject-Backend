@@ -1,6 +1,7 @@
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, json
 from pydantic import ValidationError
 from middleware.auth import login_required, role_required
+from middleware.notify import notify
 from models.salon import SalonRegisterRequest
 from services.salon_service import SalonService
 from flasgger.utils import swag_from
@@ -15,6 +16,8 @@ salon_bp = Blueprint("salon_bp", __name__, url_prefix="/api/salons")
 #@login_required(['salon_owner'])
 @salon_bp.route("/apply", methods=["POST"])
 @login_required()
+@notify(["admins"],event_type="salon_verification",title="New Salon Application",
+message_template="New salon application by {salon_name} submitted.")
 @swag_from("../docs/salon_apply.yml") 
 def register_salon():
     """
@@ -46,7 +49,7 @@ def register_salon():
 
         result = SalonService.register_salon(parsed, owner_id, owner_email, logo_file, license_file)
 
-        return jsonify({"message": "Salon registered successfully", "salon": result}), 201
+        return jsonify(result), 201
 
     except ValidationError as e:
         return jsonify({"error": "Validation failed","details": [str(err) for err in e.errors()]}), 400
@@ -61,6 +64,8 @@ def register_salon():
 #@login_required(['salon_owner'])
 @salon_bp.route("/<salon_id>/appeal", methods=["PUT"])
 @login_required()
+@notify(["admins"],event_type="salon_verification",title="Salon Appeal submitted",
+message_template="New salon appeal by {salon_name} submitted.")
 @swag_from("../docs/salon_appeal.yml")
 def appeal_salon(salon_id):
     try:
@@ -68,11 +73,21 @@ def appeal_salon(salon_id):
         if request.content_type and "multipart/form-data" in request.content_type:
             body = request.form.to_dict()
             updates = body.get("updates", {})
+            if isinstance(updates, str):
+                try:
+                    updates = json.loads(updates)
+                except json.JSONDecodeError:
+                    updates = {}
             logo_file = request.files.get("logo")
             license_file = request.files.get("license")
         else:
             body = request.get_json() or {}
             updates = body.get("updates", {})  
+            if isinstance(updates, str):
+                try:
+                    updates = json.loads(updates)
+                except json.JSONDecodeError:
+                    updates = {}
             logo_file = None
             license_file = None
         result = SalonService.appeal_salon(salon_id, user_id, updates, logo_file, license_file)
@@ -90,12 +105,13 @@ def appeal_salon(salon_id):
 @salon_bp.route("/<salon_id>/approve", methods=["PATCH"])
 @login_required()
 @role_required(['admin'])
+@notify(["owner"],event_type="salon_verification",title="Salon Approved",
+message_template="Your Salon has been approved."
+)
 @swag_from("../docs/salon_approve.yml")
 def approve_salon(salon_id):
     try:
         approver_id = g.user["sub"]
-
-
         result = SalonService.approve_salon(salon_id, approver_id)
         return jsonify(result), 200
     except Exception as e:
@@ -106,15 +122,16 @@ def approve_salon(salon_id):
 @salon_bp.route("/<salon_id>/reject", methods=["PATCH"])
 @login_required()
 @role_required(['admin'])
+@notify(["owner"],event_type="salon_verification",title="Salon Denied",
+message_template="Your Salon has been Denied. Reason(s): {reason} "
+)
 @swag_from("../docs/salon_reject.yml")
 def reject_salon(salon_id):
     try:    
         approver_id = g.user["sub"]
-
-
         reason = (request.get_json() or {}).get("reason", "No reason provided")
         result = SalonService.reject_salon(salon_id, approver_id, reason)
-        return jsonify(result), 200
+        return jsonify({"reason": reason, **result}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

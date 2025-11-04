@@ -46,8 +46,8 @@ class SalonService:
 
         if updates:
             supabase.table("salons").update(updates).eq("id", salon_id).execute()
-
-
+        
+        """
         admins = supabase.table("user_profiles").select("user_id").eq("role", "admin").execute()
         for admin in admins.data:
             supabase.table("notifications").insert({
@@ -60,8 +60,8 @@ class SalonService:
                 "related_id": salon_id,
                 "created_at": datetime.utcnow().isoformat()
             }).execute()
-
-        return {"message": "Salon registered successfully", "salon_id": salon_id,  "verification_status": "pending"}
+        """
+        return {"message": "Salon registered successfully", "salon_name": data.name, "salon_id": salon_id,  "verification_status": "pending"}
 
 
     #Admin notification format may need to be changed
@@ -95,21 +95,6 @@ class SalonService:
         if valid_updates:
             valid_updates["status"] = "pending"
             supabase.table("salons").update(valid_updates).eq("id", salon_id).execute()
-
-        admins = supabase.table("user_profiles").select("user_id").eq("role", "admin").execute()
-
-        for admin in admins.data:
-            supabase.table("notifications").insert({
-                "id": str(uuid.uuid4()),
-                "user_id": admin["user_id"],
-                "notification_type": "salon_verification",
-                "title": "Salon Appeal Submitted",
-                "message": f"Salon '{salon['name']}' has appealed its rejection.",
-                "status": "pending",
-                "related_id": salon_id,
-                "created_at": datetime.utcnow().isoformat()
-            }).execute()
-
         return {"message": "Appeal submitted successfully", "new_status": "pending"}
 
 
@@ -130,18 +115,6 @@ class SalonService:
 
         salon = supabase.table("salons").select("name, owner_id").eq("id", salon_id).single().execute()
         owner_id = salon.data["owner_id"]
-
-        supabase.table("notifications").insert({
-            "id": str(uuid.uuid4()),
-            "user_id": owner_id,
-            "notification_type": "salon_verification",
-            "title": "Salon Approved",
-            "message": f"Your salon '{salon.data['name']}' has been approved.",
-            "status": "pending",
-            "related_id": salon_id,
-            "created_at": datetime.utcnow().isoformat()
-        }).execute()
-
         return {"message": "Salon approved successfully"}
 
 
@@ -154,17 +127,6 @@ class SalonService:
 
         salon = supabase.table("salons").select("name, owner_id").eq("id", salon_id).single().execute()
         owner_id = salon.data["owner_id"]
-
-        supabase.table("notifications").insert({
-            "id": str(uuid.uuid4()),
-            "user_id": owner_id,
-            "notification_type": "salon_verification",
-            "title": "Salon Application Rejected",
-            "message": f"Your salon '{salon.data['name']}' was rejected. Reason: {reason}",
-            "status": "pending",
-            "related_id": salon_id,
-            "created_at": datetime.utcnow().isoformat()
-        }).execute()
 
         return {"message": "Salon rejected", "reason": reason}
 
