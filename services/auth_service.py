@@ -388,4 +388,42 @@ class AuthService:
                 
         except Exception as e:
             return False, str(e)
-
+        
+    @staticmethod
+    def upload_profile_picture(user_id: str, profile_picture) -> Tuple[str, Optional[str]]:
+        """
+        Upload or update the profile picture for a user.
+        
+        Args:
+            user_id: User's UUID
+            profile_picture: File object of the profile picture
+        Returns:
+            Tuple of (profile_picture_url, error_message)
+        """
+        try:
+            file_extension = profile_picture.filename.split('.')[-1]
+            storage_path = f'profile_pictures/{user_id}.{file_extension}'
+            
+            response = supabase.storage.from_('user-profile-images').upload(
+                storage_path,
+                profile_picture,
+                {'upsert': True}
+            )
+            
+            if response.error:
+                return None, response.error.message
+            
+            url_response = supabase.storage.from_('user-profile-images').get_public_url(storage_path)
+            profile_picture_url = url_response.public_url
+            
+            AuthService.update_user_profile(
+                user_id,
+                profile_image_url=profile_picture_url
+            )
+            
+            return profile_picture_url, None
+            
+        except Exception as e:
+            return None, str(e)
+        
+    

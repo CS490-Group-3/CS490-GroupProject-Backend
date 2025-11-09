@@ -78,3 +78,15 @@ class AppointmentService:
             return appointments, None
         except Exception as e:
             return None, str(e)
+    @staticmethod
+    def get_user_history(user_id):
+        # Logic to fetch appointment history for a user
+        try:
+            response = supabase.table("appointments").select("*").eq("customer_id", user_id).neq("status", "scheduled").execute()
+            if response.error:
+                return None, response.error.message
+            
+            appointments = [record for record in response.data]
+            return appointments, None
+        except Exception as e:
+            return None, str(e)
