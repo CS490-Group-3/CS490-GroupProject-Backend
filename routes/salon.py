@@ -4,6 +4,7 @@ from middleware.auth import login_required, role_required
 from middleware.notify import notify
 from models.salon import SalonRegisterRequest
 from services.salon_service import SalonService
+from services.promotion_service import PromotionService
 from flasgger.utils import swag_from
 
 salon_bp = Blueprint("salon_bp", __name__, url_prefix="/api/salons")
@@ -95,6 +96,27 @@ def appeal_salon(salon_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+
+@salon_bp.route('/<uuid:salon_id>/promotions', methods=['POST'])
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/salon_promotions.yml")
+def create_promotional_offer(salon_id):
+    """
+    Create a promotional offer for a salon (owner or admin).
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing JSON body"}), 400
+
+    try:
+        result = PromotionService.create_offer(salon_id, data)
+        return jsonify(result), 201
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 
