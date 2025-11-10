@@ -360,3 +360,28 @@ class AuthService:
         except Exception as e:
             return False, str(e)
 
+    @staticmethod
+    def get_barber_id(user_id: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Get barber ID associated with a user ID.
+        
+        Args:
+            user_id: User's UUID
+        
+        Returns:
+            Tuple of (barber_id, error_message)
+        """
+        try:
+            response = supabase.table('barbers')\
+                .select('id')\
+                .eq('user_id', user_id)\
+                .limit(1)\
+                .execute()
+            
+            if response.data:
+                return response.data[0]['id'], None
+            else:
+                return None, "Barber not found for the given user ID"
+                
+        except Exception as e:
+            return None, str(e)

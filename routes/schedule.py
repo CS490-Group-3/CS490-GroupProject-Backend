@@ -21,7 +21,7 @@ def get_availability(barber_id):
     try:
         if barber_id is None:
             return jsonify({"error": "Missing barber_id parameter"}), 400
-        barber = AuthService.get_user_profile(barber_id)
+        barber = ScheduleService.check_barber_exists(barber_id)
         if not barber:
             return jsonify({"error": "Barber not found"}), 404
         # Call schedule service to get availability
@@ -41,7 +41,7 @@ def get_availability(barber_id):
     
 @schedule_bp.route('/availability', methods=['POST'])
 @login_required
-@role_required(['barber', 'admin', 'owner'])
+@role_required(['barber'])
 def create_availability():
     """
     Create barber weekly availability.
@@ -56,8 +56,9 @@ def create_availability():
         if not availabilities:
             return jsonify({"error": "Missing 'availability' in request body"}), 400
         
-        id = json_data.get('barber_id')
-        if not id:
+        id = get_current_user().get('id')
+        barber_id = AuthService.get_barber_id(id)
+        if not barber_id:
             return jsonify({"error": "Current user is not associated with a barber"}), 400
         
         for availability in availabilities:
@@ -65,7 +66,7 @@ def create_availability():
             data = BarberAvailabilityCreateRequest(**availability)
             # Call schedule service to create availability
             result, error = ScheduleService.create_availability(
-                barber_id=id,
+                barber_id=barber_id,
                 day_of_week=data.day_of_week,
                 start_time=data.start_time,
                 end_time=data.end_time,
@@ -86,7 +87,7 @@ def create_availability():
     
 @schedule_bp.route('/availability', methods=['PATCH'])
 @login_required
-@role_required(['barber', 'admin', 'owner'])
+@role_required(['barber'])
 def update_availability():
     """
     Update barber weekly availability.
@@ -101,8 +102,9 @@ def update_availability():
         if not availabilities:
             return jsonify({"error": "Missing 'availability' in request body"}), 400
         
-        id = json_data.get('barber_id')
-        if not id:
+        id = get_current_user().get('id')
+        barber_id = AuthService.get_barber_id(id)
+        if not barber_id:
             return jsonify({"error": "Current user is not associated with a barber"}), 400
         
         for availability in availabilities:
