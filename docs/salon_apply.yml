@@ -1,0 +1,106 @@
+---
+tags:
+  - Salon
+summary: Submit a new salon registration request
+description: >
+  Allows an authenticated salon owner to submit a new salon registration application.
+consumes:
+  - application/json
+  - multipart/form-data
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+  - in: formData
+    name: name
+    type: string
+    required: true
+    example: Swag Shop
+  - in: formData
+    name: address
+    type: string
+    required: true
+    example: 123 Main Street
+  - in: formData
+    name: city
+    type: string
+    example: Newark
+  - in: formData
+    name: state
+    type: string
+    example: NJ
+  - in: formData
+    name: zip_code
+    type: string
+    example: "07102"
+  - in: formData
+    name: phone
+    type: string
+    example: "9735551234"
+  - in: formData
+    name: email
+    type: string
+    example: owner@swagshop.com
+  - in: formData
+    name: description
+    type: string
+    example: Trendy barbershop offering cuts, fades, and beard trims.
+  - in: formData
+    name: logo
+    type: file
+    description: Optional salon logo
+  - in: formData
+    name: license
+    type: file
+    description: Optional license upload
+
+responses:
+  201:
+    description: Salon registered successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Salon registered successfully"
+        salon:
+          type: object
+          properties:
+            id:
+              type: string
+              example: "b534633a-23bc-4479-968f-8a004615821c"
+            name:
+              type: string
+              example: "Swag Shop"
+            status:
+              type: string
+              example: "pending"
+  400:
+    description: Validation failed or missing contact info
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "At least one contact method (phone or email) is required."
+  403:
+    description: Forbidden - user is not a salon owner
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Only salon owners can register a salon."
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred while registering salon."
+

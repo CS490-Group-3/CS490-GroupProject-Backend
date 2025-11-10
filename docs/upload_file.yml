@@ -1,0 +1,78 @@
+---
+tags:
+  - Uploads
+summary: Upload a salon-related file (logo or license)
+description: >
+  Allows an authenticated user to upload a file related to a salon (e.g., logo or license).  
+  The file type must be either **logo** or **license**, and the request must include a valid **salon_id**.
+consumes:
+  - multipart/form-data
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: file_type
+    type: string
+    required: true
+    enum: [logo, license]
+    description: Type of file being uploaded
+    example: logo
+
+  - in: formData
+    name: salon_id
+    type: string
+    required: true
+    description: The unique ID of the salon the file belongs to
+    example: b534633a-23bc-4479-968f-8a004615821c
+
+  - in: formData
+    name: file
+    type: file
+    required: true
+    description: The file to upload (e.g., PNG, JPG, PDF)
+responses:
+  200:
+    description: File uploaded successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "File uploaded successfully"
+        url:
+          type: string
+          example: "https://supabase.io/storage/v1/object/public/salons/b5346/logo.png"
+        file_type:
+          type: string
+          example: "logo"
+  400:
+    description: Invalid request or missing data
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Missing file or salon_id"
+  403:
+    description: Unauthorized access
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Authentication required"
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred while uploading file."
+
