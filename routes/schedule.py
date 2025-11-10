@@ -25,7 +25,7 @@ def get_availability(barber_id):
         if not barber:
             return jsonify({"error": "Barber not found"}), 404
         # Call schedule service to get availability
-        result, error = ScheduleService.get_availability(barber_id=id)
+        result, error = ScheduleService.get_availability(barber_id=barber_id)
         
         if error:
             return jsonify({"error": error}), 400
