@@ -7,9 +7,12 @@ from datetime import date, time, datetime
 
 # Enum for Appointment Status
 AppointmentStatus = Literal[
+    "pending",
     "scheduled",
     "completed",
-    "canceled",
+    "denied",
+    "cancelled",
+    "rescheduled",
     "no_show"
 ]
 
