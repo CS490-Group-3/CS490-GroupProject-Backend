@@ -1,0 +1,77 @@
+---
+tags:
+  - Authentication
+summary: Get current authenticated user
+description: >
+  Returns the profile data for the currently authenticated user.
+  Requires valid access token in Authorization header.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+    example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+responses:
+  200:
+    description: User data retrieved successfully
+    schema:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            sub:
+              type: string
+              format: uuid
+              description: User ID
+              example: "123e4567-e89b-12d3-a456-426614174000"
+            email:
+              type: string
+              example: "user@example.com"
+            role:
+              type: string
+              example: "customer"
+            first_name:
+              type: string
+              example: "John"
+            last_name:
+              type: string
+              example: "Doe"
+            phone:
+              type: string
+              example: "555-1234"
+            profile_image_url:
+              type: string
+              nullable: true
+              example: "https://example.com/images/profile.jpg"
+            date_of_birth:
+              type: string
+              format: date
+              nullable: true
+              example: "1990-01-15"
+  401:
+    description: Unauthorized - Invalid or missing token
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unauthorized"
+        message:
+          type: string
+          example: "Invalid token"
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "An unexpected error occurred"
+

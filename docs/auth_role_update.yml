@@ -1,0 +1,90 @@
+---
+tags:
+  - Authentication
+  - Admin
+summary: Update user role (Admin only)
+description: >
+  Updates a user's role in the system. This endpoint is restricted to admin users only.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token (admin only)
+    required: true
+    type: string
+    example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+  - in: path
+    name: user_id
+    type: string
+    format: uuid
+    required: true
+    description: The ID of the user whose role is being updated
+    example: "123e4567-e89b-12d3-a456-426614174000"
+
+  - in: body
+    name: body
+    description: New role for the user
+    required: true
+    schema:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          type: string
+          enum: [customer, salon_owner, barber, admin]
+          description: New role to assign to the user
+          example: "salon_owner"
+
+responses:
+  200:
+    description: Role updated successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Role updated successfully"
+  400:
+    description: Invalid input or role update failed
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Invalid role specified"
+        details:
+          type: array
+          description: Validation error details
+  401:
+    description: Unauthorized - Invalid or missing token
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unauthorized"
+  403:
+    description: Forbidden - User is not an admin
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Forbidden"
+        message:
+          type: string
+          example: "Access denied. Required role: admin"
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "An unexpected error occurred"
+
