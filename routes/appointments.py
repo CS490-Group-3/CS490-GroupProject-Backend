@@ -33,7 +33,10 @@ def list_appointments():
             appointments, error = AppointmentService.get_all_salon_appointments(salon_ids)
         elif user_role == 'barber':
             # Fetch appointments for barber
-            appointments, error = AppointmentService.get_appointments_by_barber(user_id)
+            barber_id = AuthService.get_barber_id(user_id)
+            if barber_id is None:
+                return jsonify({"error": "Barber profile not found"}), 404
+            appointments, error = AppointmentService.get_appointments_by_barber(barber_id)
         else:
             return jsonify({"error": "Unauthorized role"}), 403
         
