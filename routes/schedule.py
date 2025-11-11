@@ -12,13 +12,15 @@ from middleware import login_required, role_required, get_current_user
 
 schedule_bp = Blueprint('schedule', __name__, url_prefix='/api/schedule')
 
-@schedule_bp.route('/availability/<barber_id>', methods=['GET'])
+@schedule_bp.route('/availability', methods=['GET'])
 @login_required
 def get_availability(barber_id):
     """
     Get barber weekly availability.
     """
     try:
+        id = get_current_user().get('id')
+        barber_id = AuthService.get_barber_id(id)
         if barber_id is None:
             return jsonify({"error": "Missing barber_id parameter"}), 400
         barber = ScheduleService.check_barber_exists(barber_id)
