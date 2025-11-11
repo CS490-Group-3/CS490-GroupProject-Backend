@@ -3,7 +3,7 @@ Appointment-related Pydantic models for request/response validation.
 """
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Literal
-from datetime import date, time, datetime
+from datetime import datetime
 
 # Enum for Appointment Status
 AppointmentStatus = Literal[
@@ -23,17 +23,15 @@ class AppointmentCreateRequest(BaseModel):
     barber_id: str
     service_id: str
     salon_id: str
-    appointment_date: date
-    start_time: time
-    end_time: time
+    start_at: datetime
+    end_at: Optional[datetime] # can compute from service.duration if ommitted
     notes: Optional[str] = None
 
 
 class AppointmentUpdateRequest(BaseModel):
     """Request model for updating an appointment."""
-    appointment_date: Optional[date] = None
-    start_time: Optional[time] = None
-    end_time: Optional[time] = None
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
     status: Optional[AppointmentStatus] = None
     notes: Optional[str] = None
     cancellation_reason: Optional[str] = None
@@ -46,9 +44,8 @@ class AppointmentResponse(BaseModel):
     barber_id: str
     service_id: str
     salon_id: str
-    appointment_date: date
-    start_time: time
-    end_time: time
+    start_at: datetime
+    end_time: datetime
     status: AppointmentStatus
     notes: Optional[str]
     cancellation_reason: Optional[str]
