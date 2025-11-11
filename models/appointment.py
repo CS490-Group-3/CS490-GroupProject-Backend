@@ -45,7 +45,7 @@ class AppointmentResponse(BaseModel):
     service_id: str
     salon_id: str
     start_at: datetime
-    end_time: datetime
+    end_at: datetime
     status: AppointmentStatus
     notes: Optional[str]
     cancellation_reason: Optional[str]
