@@ -1,0 +1,54 @@
+---
+tags:
+  - Salon
+summary: View all pending salon applications
+description: >
+  Allows an authenticated **admin** to retrieve a list of all salons whose application status is currently **pending**.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token (admin only)
+    required: true
+    type: string
+responses:
+  200:
+    description: List of pending salons
+    schema:
+      type: array
+      items:
+        type: object
+        properties:
+          id:
+            type: string
+            example: "b534633a-23bc-4479-968f-8a004615821c"
+          name:
+            type: string
+            example: "Swag Shop"
+          owner_id:
+            type: string
+            example: "5aaa1244-1b1c-4a47-a362-88437d94312a"
+          status:
+            type: string
+            example: "pending"
+          created_at:
+            type: string
+            example: "2025-10-25T02:10:00Z"
+  403:
+    description: Forbidden - user is not an admin
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unauthorized"
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred while fetching pending salons."
+

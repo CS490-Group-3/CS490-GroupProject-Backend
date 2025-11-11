@@ -1,0 +1,72 @@
+---
+tags:
+  - Salon
+summary: Get verification history for a salon
+description: >
+  Retrieves the verification and appeal history of a specific salon,  
+  showing all actions taken by both the owner and admin users (derived from the **notifications** table).
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token (admin only)
+    required: true
+    type: string
+  - in: path
+    name: salon_id
+    type: string
+    required: true
+    description: The unique ID of the salon whose status history is requested
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+responses:
+  200:
+    description: Salon verification and appeal history
+    schema:
+      type: object
+      properties:
+        timeline:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+                example: "Salon Application Rejected"
+              message:
+                type: string
+                example: "Your salon 'Swag Shop' was rejected. Reason: Missing license."
+              created_at:
+                type: string
+                example: "2025-10-27T00:20:00Z"
+              user_id:
+                type: string
+                example: "5aaa1244-1b1c-4a47-a362-88437d94312a"
+        count:
+          type: integer
+          example: 3
+  403:
+    description: Forbidden - user is not an admin
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Admin privileges required."
+  404:
+    description: Salon not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Salon not found."
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred while retrieving status history."
+

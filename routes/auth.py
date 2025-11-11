@@ -105,6 +105,41 @@ def logout():
         return jsonify({"error": "Logout failed"}), 500
 
 
+@auth_bp.route('/refresh', methods=['POST'])
+def refresh_token():
+    """
+    Refresh access token using refresh token.
+    
+    Body:
+    {
+        "refresh_token": "refresh_token_string"
+    }
+    """
+    try:
+        data = request.get_json()
+        refresh_token = data.get('refresh_token')
+        
+        if not refresh_token:
+            return jsonify({"error": "Refresh token is required"}), 400
+        
+        # Call auth service
+        result, error = AuthService.refresh_token(refresh_token)
+        
+        if error:
+            return jsonify({"error": error}), 401
+        
+        return jsonify({
+            "message": "Token refreshed successfully",
+            "access_token": result['access_token'],
+            "refresh_token": result['refresh_token'],
+            "expires_in": result['expires_in'],
+            "token_type": result['token_type']
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": "Token refresh failed"}), 500
+
+
 @auth_bp.route('/me', methods=['GET'])
 @login_required()
 def get_current_user_route():

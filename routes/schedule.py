@@ -42,7 +42,7 @@ def get_availability():
     
     
 @schedule_bp.route('/availability', methods=['POST'])
-@login_required
+@login_required()
 @role_required(['barber', 'admin', 'owner'])
 def create_availability():
     """
@@ -88,7 +88,7 @@ def create_availability():
         return jsonify({"error": str(e)}), 500
     
 @schedule_bp.route('/availability', methods=['PATCH'])
-@login_required
+@login_required()
 @role_required(['barber', 'admin', 'owner'])
 def update_availability():
     """
