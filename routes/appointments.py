@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify
+from flasgger.utils import swag_from
 from pydantic import ValidationError
 from models.appointment import (
     AppointmentCreateRequest,  
@@ -16,6 +17,7 @@ appointments_bp.strict_slashes = False
 @appointments_bp.route('/', methods=['GET'])
 @login_required()
 @role_required(['customer', 'admin', 'salon_owner', 'barber'])
+@swag_from("../docs/list_appointments.yml")
 def list_appointments():
     """
     List past and/or present appointments for the current user.
@@ -87,6 +89,7 @@ def list_appointments():
 @appointments_bp.route("/", methods=["POST"])
 @login_required()
 @role_required(["customer", "salon_owner", "barber", "admin"])
+@swag_from("../docs/create_appointment.yml")
 def create_appointment():
     """Create a new appointment (booking)."""
     try:
@@ -106,6 +109,7 @@ def create_appointment():
 @appointments_bp.route('/', methods=['PATCH'])
 @login_required()
 @role_required(['customer', 'admin', 'salon_owner', 'barber'])
+@swag_from("../docs/update_appointment.yml")
 def update_appointment():
     """
     Generic update (respects service-size overlap checks).
@@ -145,6 +149,7 @@ def update_appointment():
 @appointments_bp.route("/<appointment_id>/cancel", methods=["PATCH"])
 @login_required()
 @role_required(["customer", "salon_owner", "barber", "admin"])
+@swag_from("../docs/cancel_appointment.yml")
 def cancel_appointment(appointment_id):
     """
     Cancel an appointment.
@@ -165,6 +170,7 @@ def cancel_appointment(appointment_id):
 @appointments_bp.route("/<appointment_id>/reschedule", methods=["PATCH"])
 @login_required()
 @role_required(["customer", "salon_owner", "barber", "admin"])
+@swag_from("../docs/reschedule_appointment.yml")
 def reschedule_appointment(appointment_id):
     """
     Reschedule an appointment.
@@ -196,6 +202,7 @@ def reschedule_appointment(appointment_id):
 @appointments_bp.route("/<appointment_id>/action", methods=["PATCH"])
 @login_required()
 @role_required(["salon_owner", "barber", "admin"])
+@swag_from("../docs/confirm_or_deny.yml")
 def confirm_or_deny(appointment_id):
     """
     Confirm or deny an appointment.
@@ -216,6 +223,7 @@ def confirm_or_deny(appointment_id):
 @appointments_bp.route("/<appointment_id>/complete", methods=["PATCH"])
 @login_required()
 @role_required(["barber", "salon_owner", "admin"])
+@swag_from("../docs/mark_completed.yml")
 def mark_completed(appointment_id):
     """Mark appointment as completed or no_show."""
     user = get_current_user()
@@ -232,6 +240,7 @@ def mark_completed(appointment_id):
 @appointments_bp.route("/<appointment_id>", methods=["GET"])
 @login_required()
 @role_required(["customer", "salon_owner", "barber", "admin"])
+@swag_from("../docs/get_appointment.yml")
 def get_appointment(appointment_id):
     """
     Get details for a single appointment by ID.
