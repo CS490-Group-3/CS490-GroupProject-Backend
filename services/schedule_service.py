@@ -5,6 +5,23 @@ from gotrue.errors import AuthApiError
 class ScheduleService:
     
     @staticmethod
+    def check_barber_exists(barber_id: str) -> bool:
+        """
+        Check if a barber exists in the users table.
+        
+        Args:
+            barber_id (str): ID of the barber to check.
+        Returns:
+            bool: True if barber exists, False otherwise.
+        """
+        try:
+            response = supabase.table("barbers").select("id").eq("id", barber_id).execute()
+            if response.error:
+                return False
+            return len(response.data) > 0
+        except Exception:
+            return False
+    @staticmethod
     def create_availability(
         barber_id: str,
         day_of_week: int,
