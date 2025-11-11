@@ -12,7 +12,7 @@ appointments_bp = Blueprint('appointments', __name__, url_prefix='/api/appointme
 
 @appointments_bp.route('/', methods=['GET'])
 @login_required()
-@role_required(['customer', 'admin', 'owner', 'barber'])
+@role_required(['customer', 'admin', 'salon_owner', 'barber'])
 def list_appointments():
     """
     List appointments for the current user.
@@ -52,7 +52,7 @@ def list_appointments():
 
 @appointments_bp.route('/', methods=['PATCH'])
 @login_required()
-@role_required(['customer', 'admin', 'owner', 'barber'])
+@role_required(['customer', 'admin', 'salon_owner', 'barber'])
 def update_appointment():
     """
     Update an existing appointment.
@@ -88,7 +88,7 @@ def update_appointment():
 
 @appointments_bp.route('/<id>/<status>', methods=['PATCH'])
 @login_required()
-@role_required(['customer', 'admin', 'owner', 'barber'])
+@role_required(['customer', 'admin', 'salon_owner', 'barber'])
 def change_appointment_status(id, status):
     """
     Change the status of an appointment.

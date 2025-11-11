@@ -43,7 +43,7 @@ def get_availability():
     
 @schedule_bp.route('/availability', methods=['POST'])
 @login_required()
-@role_required(['barber', 'admin', 'owner'])
+@role_required(['barber', 'admin', 'salon_owner'])
 def create_availability():
     """
     Create barber weekly availability.
@@ -89,7 +89,7 @@ def create_availability():
     
 @schedule_bp.route('/availability', methods=['PATCH'])
 @login_required()
-@role_required(['barber', 'admin', 'owner'])
+@role_required(['barber', 'admin', 'salon_owner'])
 def update_availability():
     """
     Update barber weekly availability.
