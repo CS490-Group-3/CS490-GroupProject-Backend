@@ -175,7 +175,8 @@ class AppointmentService:
             return None, str(e)
     
     @staticmethod
-    def cancel_appointment(appointment_id: str, cancelled_by: str, reason: Optional[str] = None):
+    def cancel_appointment(appointment_id: str, reason: Optional[str] = None):
+        # can add cancelled_by parameter in future for auditing purposes
         """
         set status=cancelled, capture optional reason.
         """
