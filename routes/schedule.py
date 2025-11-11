@@ -14,7 +14,7 @@ schedule_bp = Blueprint('schedule', __name__, url_prefix='/api/schedule')
 
 @schedule_bp.route('/availability', methods=['GET'])
 @login_required
-def get_availability(barber_id):
+def get_availability():
     """
     Get barber weekly availability.
     """
