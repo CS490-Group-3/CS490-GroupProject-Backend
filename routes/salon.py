@@ -5,6 +5,7 @@ from middleware.notify import notify
 from models.salon import SalonRegisterRequest
 from services.salon_service import SalonService
 from flasgger.utils import swag_from
+from utils.response import success_response, error_response
 
 salon_bp = Blueprint("salon_bp", __name__, url_prefix="/api/salons")
 
@@ -38,24 +39,23 @@ def register_salon():
 
         # Validate contact info
         if not (parsed.phone or parsed.email):
-            return jsonify({"error": "At least one contact method (phone or email) is required."}), 400
+            return error_response(message="At least one contact method (phone or email) is required.", status_code=400, code="validation_error")
 
         # Role check
         if g.user.get("role") != "salon_owner":
-            return jsonify({"error": "Only salon owners can register a salon."}), 403
+            return error_response(message="Only salon owners can register a salon.", status_code=403, code="forbidden")
 
         owner_id = g.user.get("sub")  
         owner_email = g.user.get("email")
 
         result = SalonService.register_salon(parsed, owner_id, owner_email, logo_file, license_file)
-
-        return jsonify(result), 201
+        return success_response(data=result, status_code=201, message="Salon application submitted.")
 
     except ValidationError as e:
-        return jsonify({"error": "Validation failed","details": [str(err) for err in e.errors()]}), 400
+        return error_response(message="Validation failed", status_code=400, code="validation_error", details=[str(err) for err in e.errors()])
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return error_response(message="Internal server error", status_code=500, code="internal_error")
 
 
 

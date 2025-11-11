@@ -6,6 +6,7 @@ from flask_cors import CORS
 from config import FLASK_DEBUG
 import sys
 from flasgger import Swagger
+from utils.response import error_response
 
 from routes import health_bp, auth_bp, appointments_bp, schedule_bp, salon_bp, upload_bp
 
@@ -31,18 +32,20 @@ def create_app():
     @app.errorhandler(404)
     def not_found(error):
         """ Handle 404 errors. """
-        return jsonify({
-            "error": "Not Found",
-            "message": "The requested endpoint does not exist"
-        }), 404
+        return error_response(
+            message="The requested endpoint does not exist",
+            status_code=404,
+            code="not_found"
+        )
 
     @app.errorhandler(500)
     def internal_error(error):
         """ Handle 500 errors. """
-        return jsonify({
-            "error": "Internal Server Error",
-            "message": "An unexpected error occurred"
-        }), 500
+        return error_response(
+            message="An unexpected error occurred",
+            status_code=500,
+            code="internal_server_error"
+        )
     
     return app
 

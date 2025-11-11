@@ -11,6 +11,7 @@ from models.user import (
 )
 from services.auth_service import AuthService
 from middleware import login_required, role_required, get_current_user
+from utils.response import success_response, error_response
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
@@ -36,17 +37,18 @@ def signup():
         )
         
         if error:
-            return jsonify({"error": error}), 400
+            return error_response(message=error, status_code=400, code="signup_failed")
         
-        return jsonify({
-            "message": "User created successfully. Please check your email to verify your account.",
-            "user": result
-        }), 201
+        return success_response(
+            message="User created successfully. Please check your email to verify your account.",
+            data={"user": result},
+            status_code=201
+        )
         
     except ValidationError as e:
-        return jsonify({"error": "Validation failed", "details": e.errors()}), 400
+        return error_response(message="Validation failed", status_code=400, code="validation_error", details=e.errors())
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return error_response(message="Internal server error", status_code=500, code="internal_error")
 
 
 @auth_bp.route('/login', methods=['POST'])
@@ -63,20 +65,23 @@ def login():
         result, error = AuthService.login(data.email, data.password)
         
         if error:
-            return jsonify({"error": error}), 401
+            return error_response(message=error, status_code=401, code="invalid_credentials")
         
-        return jsonify({
-            "message": "Login successful",
-            "access_token": result['access_token'],
-            "refresh_token": result['refresh_token'],
-            "expires_in": result['expires_in'],
-            "user": result['user']
-        }), 200
+        return success_response(
+            message="Login successful",
+            data={
+                "access_token": result["access_token"],
+                "refresh_token": result["refresh_token"],
+                "expires_in": result["expires_in"],
+                "user": result["user"]
+            },
+            status_code=200
+        )
         
     except ValidationError as e:
-        return jsonify({"error": "Validation failed", "details": e.errors()}), 400
-    except Exception as e:
-        return jsonify({"error": "Login failed"}), 500
+        return error_response(message="Validation failed", status_code=400, code="validation_error", details=e.errors())
+    except Exception:
+        return error_response(message="Login failed", status_code=500, code="internal_error")
 
 
 @auth_bp.route('/logout', methods=['POST'])
@@ -89,7 +94,7 @@ def logout():
         # Get token from Authorization header
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({"error": "Missing or invalid token"}), 401
+            return error_response(message="Missing or invalid token", status_code=401, code="unauthorized")
         
         token = auth_header.split(' ')[1]
         
@@ -97,12 +102,12 @@ def logout():
         success, error = AuthService.logout(token)
         
         if error:
-            return jsonify({"error": error}), 500
+            return error_response(message=error, status_code=500, code="logout_failed")
         
-        return jsonify({"message": "Logged out successfully"}), 200
+        return success_response(message="Logged out successfully", status_code=200)
         
-    except Exception as e:
-        return jsonify({"error": "Logout failed"}), 500
+    except Exception:
+        return error_response(message="Logout failed", status_code=500, code="internal_error")
 
 
 @auth_bp.route('/refresh', methods=['POST'])
@@ -120,24 +125,27 @@ def refresh_token():
         refresh_token = data.get('refresh_token')
         
         if not refresh_token:
-            return jsonify({"error": "Refresh token is required"}), 400
+            return error_response(message="Refresh token is required", status_code=400, code="validation_error")
         
         # Call auth service
         result, error = AuthService.refresh_token(refresh_token)
         
         if error:
-            return jsonify({"error": error}), 401
+            return error_response(message=error, status_code=401, code="invalid_refresh_token")
         
-        return jsonify({
-            "message": "Token refreshed successfully",
-            "access_token": result['access_token'],
-            "refresh_token": result['refresh_token'],
-            "expires_in": result['expires_in'],
-            "token_type": result['token_type']
-        }), 200
+        return success_response(
+            message="Token refreshed successfully",
+            data={
+                "access_token": result["access_token"],
+                "refresh_token": result["refresh_token"],
+                "expires_in": result["expires_in"],
+                "token_type": result["token_type"],
+            },
+            status_code=200
+        )
         
-    except Exception as e:
-        return jsonify({"error": "Token refresh failed"}), 500
+    except Exception:
+        return error_response(message="Token refresh failed", status_code=500, code="internal_error")
 
 
 @auth_bp.route('/me', methods=['GET'])
@@ -148,9 +156,9 @@ def get_current_user_route():
     """
     try:
         user = get_current_user()
-        return jsonify({"user": user}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return success_response(data={"user": user}, status_code=200)
+    except Exception:
+        return error_response(message="Failed to fetch user", status_code=500, code="internal_error")
 
 
 @auth_bp.route('/profile', methods=['PUT'])
@@ -176,17 +184,18 @@ def update_profile():
         )
         
         if error:
-            return jsonify({"error": error}), 400
+            return error_response(message=error, status_code=400, code="profile_update_failed")
         
-        return jsonify({
-            "message": "Profile updated successfully",
-            "profile": updated_profile
-        }), 200
+        return success_response(
+            message="Profile updated successfully",
+            data={"profile": updated_profile},
+            status_code=200
+        )
         
     except ValidationError as e:
-        return jsonify({"error": "Validation failed", "details": e.errors()}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return error_response(message="Validation failed", status_code=400, code="validation_error", details=e.errors())
+    except Exception:
+        return error_response(message="Internal server error", status_code=500, code="internal_error")
 
 
 @auth_bp.route('/users/<user_id>/role', methods=['PUT'])
@@ -209,14 +218,14 @@ def update_user_role(user_id: str):
         )
         
         if error:
-            return jsonify({"error": error}), 400
+            return error_response(message=error, status_code=400, code="role_update_failed")
         
-        return jsonify({"message": "Role updated successfully"}), 200
+        return success_response(message="Role updated successfully", status_code=200)
         
     except ValidationError as e:
-        return jsonify({"error": "Validation failed", "details": e.errors()}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return error_response(message="Validation failed", status_code=400, code="validation_error", details=e.errors())
+    except Exception:
+        return error_response(message="Internal server error", status_code=500, code="internal_error")
 
 
 @auth_bp.route('/password-reset/request', methods=['POST'])
@@ -229,17 +238,18 @@ def request_password_reset():
         email = data.get('email')
         
         if not email:
-            return jsonify({"error": "Email is required"}), 400
+            return error_response(message="Email is required", status_code=400, code="validation_error")
         
         success, error = AuthService.request_password_reset(email)
         
         # Always return success to prevent email enumeration
-        return jsonify({
-            "message": "If an account exists with that email, a password reset link has been sent."
-        }), 200
+        return success_response(
+            message="If an account exists with that email, a password reset link has been sent.",
+            status_code=200
+        )
         
-    except Exception as e:
-        return jsonify({"error": "Failed to process request"}), 500
+    except Exception:
+        return error_response(message="Failed to process request", status_code=500, code="internal_error")
 
 
 @auth_bp.route('/password-reset/confirm', methods=['POST'])
@@ -259,26 +269,27 @@ def reset_password_confirm():
         new_password = data.get('new_password')
         
         if not access_token:
-            return jsonify({"error": "Reset token is required"}), 400
+            return error_response(message="Reset token is required", status_code=400, code="validation_error")
         
         if not new_password:
-            return jsonify({"error": "New password is required"}), 400
+            return error_response(message="New password is required", status_code=400, code="validation_error")
         
         if len(new_password) < 8:
-            return jsonify({"error": "Password must be at least 8 characters"}), 400
+            return error_response(message="Password must be at least 8 characters", status_code=400, code="validation_error")
         
         # Reset password with token
         success, error = AuthService.reset_password_with_token(access_token, new_password)
         
         if error:
-            return jsonify({"error": error}), 400
+            return error_response(message=error, status_code=400, code="reset_failed")
         
-        return jsonify({
-            "message": "Password reset successfully. You can now log in with your new password."
-        }), 200
+        return success_response(
+            message="Password reset successfully. You can now log in with your new password.",
+            status_code=200
+        )
         
-    except Exception as e:
-        return jsonify({"error": "Failed to reset password"}), 500
+    except Exception:
+        return error_response(message="Failed to reset password", status_code=500, code="internal_error")
 
 
 @auth_bp.route('/password/change', methods=['PUT'])
@@ -298,10 +309,10 @@ def change_password():
         new_password = data.get('new_password')
         
         if not new_password:
-            return jsonify({"error": "New password is required"}), 400
+            return error_response(message="New password is required", status_code=400, code="validation_error")
         
         if len(new_password) < 8:
-            return jsonify({"error": "Password must be at least 8 characters"}), 400
+            return error_response(message="Password must be at least 8 characters", status_code=400, code="validation_error")
         
         # Get the actual token to update password
         auth_header = request.headers.get('Authorization')
@@ -310,12 +321,10 @@ def change_password():
         success, error = AuthService.update_password(token, new_password)
         
         if error:
-            return jsonify({"error": error}), 400
+            return error_response(message=error, status_code=400, code="password_change_failed")
         
-        return jsonify({
-            "message": "Password changed successfully"
-        }), 200
+        return success_response(message="Password changed successfully", status_code=200)
         
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return error_response(message="Internal server error", status_code=500, code="internal_error")
 

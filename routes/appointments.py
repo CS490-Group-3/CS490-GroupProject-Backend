@@ -7,6 +7,7 @@ from models.appointment import (
 from services.appointment_service import AppointmentService
 from services.auth_service import AuthService
 from middleware import login_required, role_required, get_current_user, get_owned_salons
+from utils.response import success_response, error_response
 
 appointments_bp = Blueprint('appointments', __name__, url_prefix='/api/appointments')
 
@@ -35,17 +36,18 @@ def list_appointments():
             # Fetch appointments for barber
             appointments, error = AppointmentService.get_appointments_by_barber(user_id)
         else:
-            return jsonify({"error": "Unauthorized role"}), 403
+            return error_response(message="Unauthorized role", status_code=403, code="forbidden")
         
         if error:
-            return jsonify({"error": error}), 400
+            return error_response(message=error, status_code=400, code="list_failed")
         
-        return jsonify({
-            "appointments": [appointment.dict() for appointment in appointments]
-        }), 200
+        return success_response(
+            data={"appointments": [appointment.dict() for appointment in appointments]},
+            status_code=200
+        )
         
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return error_response(message="Internal server error", status_code=500, code="internal_error")
 
 @appointments_bp.route('/', methods=['PATCH'])
 @login_required()
@@ -57,11 +59,11 @@ def update_appointment():
     try:
         json_data = request.get_json()
         if not json_data:
-            return jsonify({"error": "Invalid JSON body"}), 400
+            return error_response(message="Invalid JSON body", status_code=400, code="validation_error")
         
         appointment_id = json_data.get('id')
         if not appointment_id:
-            return jsonify({"error": "Missing appointment ID"}), 400
+            return error_response(message="Missing appointment ID", status_code=400, code="validation_error")
         
         data = AppointmentUpdateRequest(**json_data)
         
@@ -71,17 +73,18 @@ def update_appointment():
         result, error = AppointmentService.update_appointment(appointment_id, update_data)
         
         if error:
-            return jsonify({"error": error}), 400
+            return error_response(message=error, status_code=400, code="update_failed")
         
-        return jsonify({
-            "message": "Appointment updated successfully.",
-            "appointment": result.dict()
-        }), 200
+        return success_response(
+            message="Appointment updated successfully.",
+            data={"appointment": result.dict()},
+            status_code=200
+        )
         
     except ValidationError as e:
-        return jsonify({"error": e.errors()}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return error_response(message="Validation failed", status_code=400, code="validation_error", details=e.errors())
+    except Exception:
+        return error_response(message="Internal server error", status_code=500, code="internal_error")
 
 @appointments_bp.route('/<id>/<status>', methods=['PATCH'])
 @login_required()
@@ -93,24 +96,25 @@ def change_appointment_status(id, status):
     try:
         valid_statuses = ['scheduled', 'completed', 'canceled', 'no_show']
         if status not in valid_statuses:
-            return jsonify({"error": "Invalid status value"}), 400
+            return error_response(message="Invalid status value", status_code=400, code="validation_error")
         user = get_current_user()
         role = user.get('role')
         
         if role == 'customer' and status not in ['canceled']:
-            return jsonify({"error": "Customers can only cancel appointments."}), 403
+            return error_response(message="Customers can only cancel appointments.", status_code=403, code="forbidden")
         
         update_data = {"status": status}
         
         result, error = AppointmentService.update_appointment(id, update_data)
         
         if error:
-            return jsonify({"error": error}), 400
+            return error_response(message=error, status_code=400, code="status_update_failed")
         
-        return jsonify({
-            "message": "Appointment status updated successfully.",
-            "appointment": result.dict()
-        }), 200
+        return success_response(
+            message="Appointment status updated successfully.",
+            data={"appointment": result.dict()},
+            status_code=200
+        )
         
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return error_response(message="Internal server error", status_code=500, code="internal_error")
