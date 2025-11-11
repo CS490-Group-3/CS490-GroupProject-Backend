@@ -1,10 +1,32 @@
 from config import supabase
-from typing import Dict, Optional, Tuple
-from datetime import datetime, timedelta
+from typing import Dict, Optional, List, Tuple
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 class AppointmentService:
     # ------ helpers ------
+    @staticmethod
+    def _apply_filters(query, when: str = "all", status: Optional[List[str]] = None):
+        """attach time and status filters to a query."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        if when == "upcoming":
+            query = query.gte("start_at", now_iso)
+        elif when == "past":
+            query = query.lt("start_at", now_iso)
+
+        if status:
+            if isinstance(status, str):
+                status = [status]
+            query = query.in_("status", status)
+        return query
+    
+    @staticmethod
+    def _paginate(query, page: int, limit: int): 
+        """apply limit/offset pagination."""
+        offset = (page - 1) * limit
+        return query.range(offset, offset + limit - 1)
+
     @staticmethod
     def _get_service(service_id: str):
         # helper method to get the specific service
@@ -44,11 +66,11 @@ class AppointmentService:
     @staticmethod
     def _to_local_components(utc_iso: str, tz_name: str):
         """
-        convert UTC ISO string -> (day of week: int 0 (Sun) ... 6 (Mon), local time: str 'HH:MM:SS').
+        convert UTC ISO string -> (day of week: int 0 (Sun) ... 6 (Sat), local time: str 'HH:MM:SS').
         """
         dt_utc = datetime.fromisoformat(utc_iso.replace("Z", "+00:00"))
         local = dt_utc.astimezone(ZoneInfo(tz_name))
-        # Python: Monday=0 ... Sunday=6. Our DB uses 0..6 too.
+        # Python: Sunday=0 ... Saturday=6. Our DB uses 0..6 too.
         return local.weekday(), local.strftime("%H:%M:%S")
 
     @staticmethod
@@ -61,7 +83,7 @@ class AppointmentService:
             .select("id")
             .eq("salon_id", salon_id)
             .eq("barber_id", barber_id)
-            .eq("status", "scheduled")
+            .in_("status", ["scheduled", "rescheduled"])
             .lt("start_at", end_at)
             .gt("end_at", start_at)
         )
@@ -69,11 +91,39 @@ class AppointmentService:
             query = query.neq("id", exclude_id)
         response = query.execute()
         return bool(response.data)
+    
+    @staticmethod
+    def _to_utc_iso(dt_or_str):
+        if isinstance(dt_or_str, str):
+            dt = datetime.fromisoformat(dt_or_str.replace("Z","+00:00"))
+        else:
+            dt = dt_or_str
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+
+    @staticmethod
+    def _can_manage(user, appt) -> bool:
+        role = user.get("role")
+        uid  = user.get("id")
+        if role == "admin":
+            return True
+        if role == "customer":
+            return appt["customer_id"] == uid
+        if role == "barber":
+            barber_id = AppointmentService._get_barber_id_for_user(uid)
+            return barber_id and appt["barber_id"] == barber_id
+        if role == "salon_owner":
+            salons = supabase.table("salons").select("id").eq("owner_id", uid).execute()
+            owned = {s["id"] for s in (salons.data or [])}
+            return appt["salon_id"] in owned
+        return False
 
     # ------ booking methods ------
     @staticmethod
-    def create_appointment(appointment_data: Dict):
-        # creates an appointment.
+    def create_appointment(appointment_data: Dict, *, user: dict):
+        # creates an appointment. customer can only book for themselves.
+        # other roles must provide customer_id.
         """
         Expects UTC datetimes:
           appointment_data = {
@@ -83,6 +133,15 @@ class AppointmentService:
           }
         """
         try:
+            role = user.get("role")
+            uid = user.get("id")
+
+            if role == "customer":
+                appointment_data["customer_id"] = uid
+            else:
+                if not appointment_data.get("customer_id"):
+                    return None, "customer_id is required"
+
             service, err = AppointmentService._get_service(appointment_data["service_id"])
             if err: return None, err
             barber, err = AppointmentService._get_barber(appointment_data["barber_id"])
@@ -142,22 +201,45 @@ class AppointmentService:
             return None, str(e)
 
     @staticmethod
-    def update_appointment(appointment_id, update_data):
+    def update_appointment(appointment_id, update_data, *, user: dict):
         """
         updates appointment (supports reschedule status)
         \nNOTE: If any of start_at/end_at/barber_id/salon_id change, re-check overlap.
         """
         try:
-            # fetch the current row
-            current = supabase.table("appointments").select("*").eq("id", appointment_id).single().execute()
-            if getattr(current, "error", None) or not current.data:
-                return None, "Appointment not found"
-            row = current.data
+            current, error = AppointmentService.get_by_id(appointment_id, user=user)
+            if error:
+                return None, error
+            if not AppointmentService._can_manage(user, current):
+                return None, "Forbidden"
 
-            new_salon  = update_data.get("salon_id",  row["salon_id"])
-            new_barber = update_data.get("barber_id", row["barber_id"])
-            new_start  = update_data.get("start_at",  row["start_at"])
-            new_end    = update_data.get("end_at",    row["end_at"])
+            new_salon  = update_data.get("salon_id",  current["salon_id"])
+            new_barber = update_data.get("barber_id", current["barber_id"])
+            new_start  = update_data.get("start_at",  current["start_at"])
+            new_end    = update_data.get("end_at",    current["end_at"])
+
+            if "start_at" in update_data:
+                update_data["start_at"] = AppointmentService._to_utc_iso(update_data["start_at"])
+                new_start = update_data["start_at"]
+            else:
+                new_start = AppointmentService._to_utc_iso(new_start)
+
+            if "end_at" in update_data:
+                update_data["end_at"] = AppointmentService._to_utc_iso(update_data["end_at"])
+                new_end = update_data["end_at"]
+            else:
+                new_end = AppointmentService._to_utc_iso(new_end)
+
+            if ("barber_id" in update_data) or ("salon_id" in update_data):
+                b = (
+                    supabase.table("barbers")
+                    .select("salon_id")
+                    .eq("id", new_barber)
+                    .single()
+                    .execute()
+                )
+                if getattr(b, "error", None) or not b.data or str(b.data["salon_id"]) != str(new_salon):
+                    return None, "Barber must belong to the specified salon"
 
             # check overlap if any time/barber/salon changed
             if any(k in update_data for k in ("start_at","end_at","barber_id","salon_id")):
@@ -175,26 +257,39 @@ class AppointmentService:
             return None, str(e)
     
     @staticmethod
-    def cancel_appointment(appointment_id: str, reason: Optional[str] = None):
+    def cancel_appointment(appointment_id: str, *, user: dict, reason: Optional[str] = None):
         # can add cancelled_by parameter in future for auditing purposes
         """
         set status=cancelled, capture optional reason.
+        \nsecure, respects ownership.
         """
         try:
+            current, error = AppointmentService.get_by_id(appointment_id, user=user)
+            if error:
+                return None, error
+            if not AppointmentService._can_manage(user, current):
+                return None, "Forbidden"
+            
             update = {
                 "status": "cancelled",
                 "cancellation_reason": reason,
-                "updated_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             response = supabase.table("appointments").update(update).eq("id", appointment_id).execute()
             if getattr(response, "error", None) or not response.data:
-                return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Appointment not found"
+                return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Update failed"
             return response.data[0], None
         except Exception as e:
             return None, str(e)
     
     @staticmethod
-    def reschedule_appointment(appointment_id: str, salon_id: str, barber_id: str, new_start_at, new_end_at=None):
+    def reschedule_appointment(appointment_id: str, 
+                               salon_id: str, 
+                               barber_id: str, 
+                               new_start_at, 
+                               new_end_at=None,
+                               *,
+                               user: dict):
         """
         reschedule with proper validation:
           - parse ISO -> datetime if needed
@@ -204,30 +299,28 @@ class AppointmentService:
         """
         try:
             # fetch current row (need service_id + duration)
-            current = supabase.table("appointments").select("*").eq("id", appointment_id).single().execute()
-            if getattr(current, "error", None) or not current.data:
-                return None, "Appointment not found"
-            row = current.data
+            current, error = AppointmentService.get_by_id(appointment_id, user=user)
+            if error:
+                return None, error
+            if not AppointmentService._can_manage(user, current):
+                return None, "Forbidden"
 
-            # convert incoming datetimes if str
-            if isinstance(new_start_at, str):
-                sdt = datetime.fromisoformat(new_start_at.replace("Z", "+00:00"))
-            else:
-                sdt = new_start_at
+            s_iso = AppointmentService._to_utc_iso(new_start_at)
             if new_end_at is None:
                 # compute end time from service duration if not provided
-                service = supabase.table("services").select("duration_minutes").eq("id", row["service_id"]).single().execute()
+                service = supabase.table("services").select("duration_minutes").eq("id", current["service_id"]).single().execute()
                 if getattr(service, "error", None) or not service.data:
                     return None, "Service not found to compute duration"
-                new_end_at = (sdt + timedelta(minutes=int(service.data["duration_minutes"]))).isoformat()
-                new_start_at = sdt.isoformat()
+                dur = int(service.data.get("duration_minutes"))
+                e_iso = (datetime.fromisoformat(s_iso) + timedelta(minutes=dur)).isoformat()
             else:
-                if isinstance(new_end_at, str):
-                    edt = datetime.fromisoformat(new_end_at.replace("Z", "+00:00"))
-                else:
-                    edt = new_end_at
-                new_start_at = sdt.isoformat()
-                new_end_at   = edt.isoformat()
+                e_iso = AppointmentService._to_utc_iso(new_end_at)
+            
+            new_start_at, new_end_at = s_iso, e_iso
+
+            barber = supabase.table("barbers").select("salon_id").eq("id", barber_id).single().execute()
+            if getattr(barber,"error",None) or not barber.data or str(barber.data["salon_id"]) != str(salon_id):
+                return None, "Barber must belong to the specified salon"
 
             # validate availability
             ok, msg = AppointmentService.is_barber_available(salon_id, barber_id, new_start_at, new_end_at)
@@ -241,7 +334,7 @@ class AppointmentService:
                 "start_at": new_start_at,
                 "end_at": new_end_at,
                 "status": "rescheduled",
-                "updated_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             response = supabase.table("appointments").update(update).eq("id", appointment_id).execute()
             if getattr(response, "error", None) or not response.data:
@@ -252,17 +345,41 @@ class AppointmentService:
     
     # ------ workflow ------
     @staticmethod
-    def confirm_or_deny(appointment_id: str, action: str):
+    def confirm_or_deny(appointment_id: str, action: str, *, user: dict):
         """
         action: 'confirm' or 'deny'
+        \nonly admins, owners (of that salon), or the assigned barber may do this.
         """
         try:
             if action not in ("confirm", "deny"):
                 return None, "Invalid action"
+            
+            current, error = AppointmentService.get_by_id(appointment_id, user=user)
+            if error:
+                return None, error
+            
+            role = user.get("role")
+            uid = user.get("id")
+            
+            if role == "admin":
+                pass
+            elif role == "salon_owner":
+                salons = supabase.table("salons").select("id").eq("owner_id", uid).execute()
+                owned = {s["id"] for s in (salons.data or [])}
+                if current["salon_id"] not in owned:
+                    return None, "Forbidden"
+            elif role == "barber":
+                barber_id = AppointmentService._get_barber_id_for_user(uid)
+                if not barber_id or current["barber_id"] != barber_id:
+                    return None, "Forbidden"
+            else:
+                return None, "Forbidden"
+            
             status = "scheduled" if action == "confirm" else "denied"
+
             response = (
                 supabase.table("appointments")
-                .update({"status": status, "updated_at": datetime.utcnow().isoformat()})
+                .update({"status": status, "updated_at": datetime.now(timezone.utc).isoformat()})
                 .eq("id", appointment_id)
                 .execute()
             )
@@ -271,6 +388,52 @@ class AppointmentService:
             return response.data[0], None
         except Exception as e:
             return None, str(e)
+    
+    @staticmethod
+    def mark_completed_or_no_show(appointment_id: str, status: str, *, user: dict):
+        if status not in ("completed", "no_show"):
+            return None, "Invalid status"
+
+        current, error = AppointmentService.get_by_id(appointment_id, user=user)
+        if error:
+            return None, error
+
+        role = user.get("role")
+        uid = user.get("id")
+        if role == "admin":
+            pass
+        elif role == "salon_owner":
+            salons = supabase.table("salons").select("id").eq("owner_id", uid).execute()
+            owned = {s["id"] for s in (salons.data or [])}
+            if current["salon_id"] not in owned:
+                return None, "Forbidden"
+        elif role == "barber":
+            barber_id = AppointmentService._get_barber_id_for_user(uid)
+            if not barber_id or current["barber_id"] != barber_id:
+                return None, "Forbidden"
+        else:
+            return None, "Forbidden"
+
+        update = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}
+        response = supabase.table("appointments").update(update).eq("id", appointment_id).execute()
+        if getattr(response, "error", None) or not response.data:
+            return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Update failed"
+        return response.data[0], None
+
+
+    @staticmethod 
+    def _get_barber_id_for_user(user_id: str) -> str | None:
+        """Translate authenticated barber's user_id -> barbers.id"""
+        response = (
+            supabase.table("barbers")
+            .select("id")
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        if getattr(response, "error", None) or not response.data:
+            return None
+        return response.data.get("id")
     
     # ------ availability ------
     @staticmethod
@@ -323,7 +486,7 @@ class AppointmentService:
     
     # ------ reads ------
     @staticmethod
-    def get_by_id(appointment_id: str):
+    def get_by_id(appointment_id: str, *, user: dict):
         # fetches a specific appointment by id
         try:
             response = (
@@ -335,21 +498,29 @@ class AppointmentService:
             )
             if getattr(response, "error", None) or not response.data:
                 return None, "Appointment not found"
+            if not AppointmentService._can_manage(user, response.data):
+                return None, "Forbidden"
             return response.data, None
         except Exception as e:
             return None, str(e)
         
     @staticmethod
-    def get_appointments_by_customer(customer_id):
-        # fetches all appointments for a specific customer
+    def get_appointments_by_customer(customer_id: str, 
+                                     when: str = "all",
+                                     status=None,
+                                     page: int = 1,
+                                     limit: int = 20):
+        # fetches all appointments for a specific customer (supports upcoming/past/all)
         try:
-            response = (
+            query = (
                         supabase.table("appointments")
                         .select("*")
                         .eq("customer_id", customer_id)
                         .order("start_at", desc=False)
-                        .execute()
             )
+            query = AppointmentService._apply_filters(query, when, status)
+            query = AppointmentService._paginate(query, page, limit)
+            response = query.execute()
             if getattr(response, "error", None):
                 return None, response.error.message
             return response.data, None
@@ -357,16 +528,23 @@ class AppointmentService:
             return None, str(e)
         
     @staticmethod
-    def get_appointments_by_barber(barber_id):
-        # fetches all appointments for a specific barber
+    def get_appointments_by_barber(barber_id: str, 
+                                   when: str = "all",
+                                   status=None,
+                                   page: int = 1,
+                                   limit: int = 20):
+        # fetches all appointments for a specific barber (supports upcoming/past/all)
         try:
-            response = (
-                        supabase.table("appointments")
-                        .select("*")
-                        .eq("barber_id", barber_id)
-                        .order("start_at", desc=False)
-                        .execute()
+            now_iso = datetime.now(timezone.utc).isoformat()
+            query = (
+                supabase.table("appointments")
+                .select("*")
+                .eq("barber_id", barber_id)
+                .order("start_at", desc=False)
             )
+            query = AppointmentService._apply_filters(query, when, status)
+            query = AppointmentService._paginate(query, page, limit)
+            response = query.execute()
             if getattr(response, "error", None):
                 return None, response.error.message
             return response.data, None
@@ -374,38 +552,47 @@ class AppointmentService:
             return None, str(e)
         
     @staticmethod
-    def get_all_salon_appointments(salon_ids):
-        # fetches all appointments for a salon
+    def get_all_salon_appointments(salon_ids: List[str], 
+                                   when: str = "all",
+                                   status=None,
+                                   page: int = 1,
+                                   limit: int = 20):
+        # fetches all appointments for a salon (supports upcoming/past/all)
         try:
-            response = (
-                        supabase.table("appointments")
-                        .select("*")
-                        .in_("salon_id", salon_ids)
-                        .order("start_at", desc=False)
-                        .execute()
+            query = (
+                supabase.table("appointments")
+                .select("*")
+                .in_("salon_id", salon_ids)
+                .order("start_at", desc=False)
             )
+            query = AppointmentService._apply_filters(query, when, status)
+            query = AppointmentService._paginate(query, page, limit)
+            response = query.execute()
             if getattr(response, "error", None):
                 return None, response.error.message
             return response.data, None
         except Exception as e:
             return None, str(e)
     
-    # ------ history ------
     @staticmethod
-    def get_booking_history(user_id: str):
-        """
-        Returns a user's appointments ordered by start time.
-        """
-        try:
-            response = (
-                supabase.table("appointments")
-                .select("*")
-                .eq("customer_id", user_id)
-                .order("start_at", desc=False)
-                .execute()
-            )
-            if getattr(response, "error", None):
-                return None, response.error.message
-            return response.data or [], None
-        except Exception as e:
-            return None, str(e)
+    def get_admin_filtered(salon_id=None, 
+                           barber_id=None, 
+                           customer_id=None,
+                           when="all", 
+                           status=None, 
+                           page=1, 
+                           limit=20):
+        """Admin-level query with optional filters."""
+        query = supabase.table("appointments").select("*").order("start_at", desc=False)
+        if salon_id:
+            query = query.eq("salon_id", salon_id)
+        if barber_id:
+            query = query.eq("barber_id", barber_id)
+        if customer_id:
+            query = query.eq("customer_id", customer_id)
+        query = AppointmentService._apply_filters(query, when, status)
+        query = AppointmentService._paginate(query, page, limit)
+        response = query.execute()
+        if getattr(response,"error",None):
+            return None, response.error.message
+        return response.data or [], None

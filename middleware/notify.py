@@ -14,7 +14,7 @@ def notify(
     Decorator to automatically send notifications after a successful route execution.
 
     Args:
-        recipients (list[str]): Roles, user UUIDs, or identifiers to notify (e.g., ['admins', 'owner'])
+        recipients (list[str]): Roles, user UUIDs, or identifiers to notify (e.g., ['admins', 'salon_owner'])
         event_type (str): Notification type (e.g., 'salon_verification', 'appointment_update')
         title (str): Notification title
         message_template (str): Message with placeholders like {reason}, {salon_id}, {user_id}
