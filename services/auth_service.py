@@ -75,12 +75,8 @@ class AuthService:
         """
         try:
             print("Getting profile for user_id:", user_id)
-            response = (
-                supabase.table('user_profiles')
-                .select('*')
-                .eq('user_id', user_id)
-                .execute()
-            )
+            response = supabase.table('user_details').select('first_name, last_name, email, id, role').eq("id", user_id).execute()
+            
             print("Profile response:", response)
 
             # response.data is a list of dicts
@@ -115,17 +111,17 @@ class AuthService:
                 # Get user profile with role
                 profile = AuthService.get_user_profile(user.get('id'))
                 print("Profile:", profile)
+                print("first name", profile.get('first_name', '') if profile else '')
                 return {
                     "access_token": session.get('access_token'),
                     "refresh_token": session.get('refresh_token'),
                     "expires_in": session.get('expires_in'),
                     "user": {
-                        "roles": user.get('role'),
                         "id": user.get('id'),
                         "email": user.get('email'),
                         "role": profile.get('role', 'customer') if profile else 'customer',
-                        "first_name": profile.get('first_name', '') if profile else '',
-                        "last_name": profile.get('last_name', '') if profile else ''
+                        "first_name": profile.get('first_name', ''),
+                        "last_name": profile.get('last_name', '')
                     }
                 }, None
             else:
