@@ -1,0 +1,94 @@
+---
+tags:
+  - Authentication
+summary: User signup/registration
+description: >
+  Creates a new user account via Supabase Auth and initializes user profile.
+  Users must verify their email before they can log in.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: body
+    name: body
+    description: User registration details
+    required: true
+    schema:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          description: User's email address
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: User's password (min 8 characters)
+          example: "password123"
+        first_name:
+          type: string
+          description: User's first name
+          example: "John"
+        last_name:
+          type: string
+          description: User's last name
+          example: "Doe"
+        phone:
+          type: string
+          description: User's phone number
+          example: "555-1234"
+        role:
+          type: string
+          enum: [customer, salon_owner, barber, admin]
+          default: customer
+          description: User role in the system
+          example: "customer"
+
+responses:
+  201:
+    description: User created successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "User created successfully. Please check your email to verify your account."
+        user:
+          type: object
+          properties:
+            user_id:
+              type: string
+              format: uuid
+              example: "123e4567-e89b-12d3-a456-426614174000"
+            email:
+              type: string
+              example: "user@example.com"
+            role:
+              type: string
+              example: "customer"
+  400:
+    description: Invalid input or user already exists
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "User already registered"
+        details:
+          type: array
+          description: Validation error details (if applicable)
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "An unexpected error occurred"
+

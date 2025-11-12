@@ -1,0 +1,75 @@
+---
+tags:
+  - Authentication
+summary: Refresh access token
+description: >
+  Uses a refresh token to obtain a new access token when the current one expires.
+  Access tokens expire after 1 hour, so use this endpoint to maintain user sessions.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: body
+    name: body
+    description: Refresh token
+    required: true
+    schema:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          description: Refresh token obtained from login
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+responses:
+  200:
+    description: Token refreshed successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Token refreshed successfully"
+        access_token:
+          type: string
+          description: New JWT access token
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        refresh_token:
+          type: string
+          description: New refresh token
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        expires_in:
+          type: integer
+          description: Token expiration time in seconds
+          example: 3600
+        token_type:
+          type: string
+          example: "bearer"
+  400:
+    description: Refresh token is missing
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Refresh token is required"
+  401:
+    description: Invalid or expired refresh token
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Invalid or expired refresh token"
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Token refresh failed"
+

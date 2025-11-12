@@ -12,20 +12,22 @@ from middleware import login_required, role_required, get_current_user
 
 schedule_bp = Blueprint('schedule', __name__, url_prefix='/api/schedule')
 
-@schedule_bp.route('/availability/<barber_id>', methods=['GET'])
-@login_required()
-def get_availability(barber_id):
+@schedule_bp.route('/availability', methods=['GET'])
+@login_required
+def get_availability():
     """
     Get barber weekly availability.
     """
     try:
+        id = get_current_user().get('id')
+        barber_id = AuthService.get_barber_id(id)
         if barber_id is None:
             return jsonify({"error": "Missing barber_id parameter"}), 400
-        barber = AuthService.get_user_profile(barber_id)
+        barber = ScheduleService.check_barber_exists(barber_id)
         if not barber:
             return jsonify({"error": "Barber not found"}), 404
         # Call schedule service to get availability
-        result, error = ScheduleService.get_availability(barber_id=id)
+        result, error = ScheduleService.get_availability(barber_id=barber_id)
         
         if error:
             return jsonify({"error": error}), 400
@@ -56,8 +58,9 @@ def create_availability():
         if not availabilities:
             return jsonify({"error": "Missing 'availability' in request body"}), 400
         
-        id = json_data.get('barber_id')
-        if not id:
+        id = get_current_user().get('id')
+        barber_id = AuthService.get_barber_id(id)
+        if not barber_id:
             return jsonify({"error": "Current user is not associated with a barber"}), 400
         
         for availability in availabilities:
@@ -65,7 +68,7 @@ def create_availability():
             data = BarberAvailabilityCreateRequest(**availability)
             # Call schedule service to create availability
             result, error = ScheduleService.create_availability(
-                barber_id=id,
+                barber_id=barber_id,
                 day_of_week=data.day_of_week,
                 start_time=data.start_time,
                 end_time=data.end_time,
@@ -101,8 +104,9 @@ def update_availability():
         if not availabilities:
             return jsonify({"error": "Missing 'availability' in request body"}), 400
         
-        id = json_data.get('barber_id')
-        if not id:
+        id = get_current_user().get('id')
+        barber_id = AuthService.get_barber_id(id)
+        if not barber_id:
             return jsonify({"error": "Current user is not associated with a barber"}), 400
         
         for availability in availabilities:

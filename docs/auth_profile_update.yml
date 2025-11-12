@@ -1,0 +1,111 @@
+---
+tags:
+  - Authentication
+summary: Update user profile
+description: >
+  Updates the authenticated user's profile information.
+  All fields are optional - only provide fields you want to update.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+    example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+  - in: body
+    name: body
+    description: Profile fields to update
+    required: true
+    schema:
+      type: object
+      properties:
+        first_name:
+          type: string
+          description: User's first name
+          example: "John"
+        last_name:
+          type: string
+          description: User's last name
+          example: "Doe"
+        phone:
+          type: string
+          description: User's phone number
+          example: "555-9876"
+        profile_image_url:
+          type: string
+          description: URL to user's profile image
+          example: "https://example.com/images/profile.jpg"
+        date_of_birth:
+          type: string
+          format: date
+          description: User's date of birth (YYYY-MM-DD)
+          example: "1990-01-15"
+
+responses:
+  200:
+    description: Profile updated successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Profile updated successfully"
+        profile:
+          type: object
+          properties:
+            user_id:
+              type: string
+              format: uuid
+              example: "123e4567-e89b-12d3-a456-426614174000"
+            first_name:
+              type: string
+              example: "John"
+            last_name:
+              type: string
+              example: "Doe"
+            phone:
+              type: string
+              example: "555-9876"
+            profile_image_url:
+              type: string
+              example: "https://example.com/images/profile.jpg"
+            date_of_birth:
+              type: string
+              example: "1990-01-15"
+            updated_at:
+              type: string
+              format: date-time
+              example: "2024-11-11T12:00:00Z"
+  400:
+    description: Invalid input
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Validation failed"
+        details:
+          type: array
+          description: Validation error details
+  401:
+    description: Unauthorized - Invalid or missing token
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unauthorized"
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "An unexpected error occurred"
+
