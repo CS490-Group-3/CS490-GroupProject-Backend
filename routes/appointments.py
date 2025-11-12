@@ -21,7 +21,8 @@ def list_appointments():
     """
     try:
         user = get_current_user()
-        user_id = user.get('id')
+        print("Current user:", user)
+        user_id = user.get('sub')
         user_role = user.get('role')
         
         if user_role == 'customer':
@@ -35,7 +36,9 @@ def list_appointments():
             appointments, error = AppointmentService.get_all_salon_appointments(salon_ids)
         elif user_role == 'barber':
             # Fetch appointments for barber
+            print("Fetching appointments for barber with user_id:", user_id)
             barber_id = AuthService.get_barber_id(user_id)
+            print("Barber ID:", barber_id)
             if barber_id is None:
                 return jsonify({"error": "Barber profile not found"}), 404
             appointments, error = AppointmentService.get_appointments_by_barber(barber_id)

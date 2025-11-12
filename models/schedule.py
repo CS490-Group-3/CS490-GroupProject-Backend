@@ -8,7 +8,6 @@ from uuid import UUID
 
 class BarberAvailabilityCreateRequest(BaseModel):
     """Request model for creating barber weekly availability."""
-    barber_id: str
     day_of_week: int = Field(ge=0, le=6, description="0=Sunday ... 6=Saturday")
     start_time: time
     end_time: time

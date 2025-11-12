@@ -192,3 +192,35 @@ def get_salon_status_history(salon_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# Add service provider to salon
+@salon_bp.route("/provider", methods=["POST"])
+@login_required()
+@role_required(['admin', 'salon_owner'])
+def add_service_provider():
+    """
+    Add a new service provider to a salon.
+    """
+    try:
+        json_data = request.get_json()
+        if not json_data:
+            return jsonify({"error": "Invalid JSON body"}), 400
+        
+        salon_id = json_data.get('salon_id')
+        user_id = json_data.get('user_id')
+        
+        
+        if not salon_id or not user_id:
+            return jsonify({"error": "Missing required fields"}), 400
+        bio = json_data.get('bio', '')
+        specialties = json_data.get('specialties', [])
+        years_experience = json_data.get('years_experience', 0)
+        is_active = json_data.get('is_active', True)
+        result, error = SalonService.add_service_provider(salon_id, user_id, bio, specialties, years_experience, is_active)
+        
+        if error:
+            return jsonify({"error": error}), 400
+        
+        return jsonify(result), 201
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
