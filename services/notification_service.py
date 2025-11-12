@@ -258,8 +258,43 @@ class NotificationService:
 
 
 
+    @staticmethod
+    def mark_as_read(notification_id: str):
+        """
+        Mark a notification as read and record timestamp.
+        """
+        try:
+            # validate uuid format
+            uuid.UUID(notification_id)
+        except ValueError:
+            return {"error": "Invalid notification ID"}, 400
+
+        try:
+            supabase.table("notifications").update({
+                "status": "read",
+                "read_at": datetime.utcnow().isoformat()
+            }).eq("id", notification_id).execute()
+            return {"success": True}, 200
+        except Exception as e:
+            print("Error updating notification read_at:", e)
+            return {"error": str(e)}, 500
 
 
+    @staticmethod
+    def create_notification(user_id, event_type, title, message, related_id=None, scheduled_for=None):
+        data = {
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "notification_type": event_type,
+            "title": title,
+            "message": message,
+            "status": "pending" if scheduled_for else "sent",
+            "related_id": related_id,
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        if scheduled_for:
+            data["scheduled_for"] = scheduled_for.isoformat()
+        return supabase.table("notifications").insert(data).execute()
 
 
     @staticmethod

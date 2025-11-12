@@ -9,6 +9,7 @@ def notify(
     title=None,
     message_template=None,
     related_key=None,
+    schedule_func=None,
 ):
     """
     Decorator to automatically send notifications after a successful route execution.
@@ -19,6 +20,8 @@ def notify(
         title (str): Notification title
         message_template (str): Message with placeholders like {reason}, {salon_id}, {user_id}
         related_key (str): Optional key to specify which route arg is the related_id (default auto-detect)
+        schedule_func (callable): Optional function to schedule follow-up notifications (like appointment reminders)
+
     """
 
     recipients = recipients or []
@@ -91,6 +94,15 @@ def notify(
 
                     except Exception as e:
                         print(f"[notify] Failed to send notification: {e}")
+                    
+                    if schedule_func and callable(schedule_func):
+                        try:
+                            schedule_func(related_id)
+                            print(f"[notify] Scheduled follow-up notifications for {related_id}")
+                        except Exception as e:
+                            print(f"[notify] schedule_func failed: {e}")
+
+
                 except Exception as e:
                     print(f"[notify] General notify wrapper error: {e}")
             return response

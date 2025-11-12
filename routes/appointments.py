@@ -6,6 +6,7 @@ from models.appointment import (
 )
 from services.appointment_service import AppointmentService
 from services.auth_service import AuthService
+from services.notification_service import NotificationService
 from middleware import login_required, role_required, get_current_user, get_owned_salons
 from middleware.notify import notify
 
@@ -55,7 +56,9 @@ def list_appointments():
     recipients=["barber", "user"], 
     event_type="appointment_confirmation",
     title="Appointment Updated",
-    message_template="The appointment at {salon_name} for {service_name} has been updated."
+    message_template="The appointment at {salon_name} for {service_name} has been updated.",
+    schedule_func=NotificationService.schedule_upcoming_appointment, 
+    related_key="appointment_id"
 )#notify user and barber upon update 
 def update_appointment():
     """
@@ -82,9 +85,6 @@ def update_appointment():
         if error:
             return jsonify({"error": error}), 400
     
-	#update the scheduled notification for appointment
-        NotificationService.schedule_upcoming_appointment(str(appointment_id))
-        
         return jsonify({
             "message": "Appointment updated successfully.",
             "appointment": result.dict()

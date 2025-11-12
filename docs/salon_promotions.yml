@@ -43,8 +43,8 @@ parameters:
           example: "20% off all services this weekend at Fade Masters!"
         discount_type:
           type: string
-          enum: [percent, fixed]
-          example: "percent"
+          enum: [percentage]
+          example: "percentage"
         discount_value:
           type: number
           example: 20
