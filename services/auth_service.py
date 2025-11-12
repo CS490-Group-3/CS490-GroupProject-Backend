@@ -410,9 +410,9 @@ class AuthService:
             response = supabase.table('barbers')\
                 .select('id')\
                 .eq('user_id', user_id)\
-                .limit(1)\
                 .execute()
             
+            print("Barber response:", response)
             if response.data:
                 return response.data[0]['id'], None
             else:

@@ -68,16 +68,20 @@ class SalonService:
         """
         Add a service provider (barber) to a salon.
         """
-        association = supabase.table("barbers").insert({
-            "salon_id": salon_id,
-            "user_id": provider_id,
-            "bio": bio,
-            "specialties": specialties,
-            "years_experience": years_experience,
-            "is_active": is_active,
-        }).execute()
+        specialties = specialties or []
 
-        return {"message": "Service provider added to salon successfully"}
+        try:
+            supabase.table("barbers").insert({
+                "salon_id": salon_id,
+                "user_id": provider_id,
+                "bio": bio,
+                "specialties": specialties,
+                "years_experience": years_experience,
+                "is_active": is_active,
+            }).execute()
+            return {"message": "Service provider added to salon successfully"}, None
+        except Exception as e:
+            return None, str(e)
     #Admin notification format may need to be changed
 
     @staticmethod

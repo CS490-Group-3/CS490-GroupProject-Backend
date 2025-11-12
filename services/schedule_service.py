@@ -1,7 +1,7 @@
 from config import supabase
 from typing import Dict, Optional, Tuple
 from gotrue.errors import AuthApiError
-
+from datetime import time
 class ScheduleService:
     
     @staticmethod
@@ -15,8 +15,9 @@ class ScheduleService:
             bool: True if barber exists, False otherwise.
         """
         try:
+            print("Checking if barber exists with ID:", barber_id)
             response = supabase.table("barbers").select("id").eq("id", barber_id).execute()
-            if response.error:
+            if not response:
                 return False
             return len(response.data) > 0
         except Exception:
@@ -25,8 +26,8 @@ class ScheduleService:
     def create_availability(
         barber_id: str,
         day_of_week: int,
-        start_time: str,
-        end_time: str,
+        start_time: str | time,
+        end_time: str | time,
         is_active: bool = True
     ) -> Tuple[Optional[Dict], Optional[str]]:
         """
@@ -43,6 +44,10 @@ class ScheduleService:
             Tuple containing the created availability dict or None, and an error message or None.
         """
         try:
+            if isinstance(start_time, time):
+                start_time = start_time.strftime("%H:%M:%S")
+            if isinstance(end_time, time):
+                end_time = end_time.strftime("%H:%M:%S")
             data = {
                 "barber_id": barber_id,
                 "day_of_week": day_of_week,
@@ -51,8 +56,8 @@ class ScheduleService:
                 "is_active": is_active
             }
             response = supabase.table("barber_availability").insert(data).execute()
-            if response.error:
-                return None, response.error.message
+            if not getattr(response, "data", None):
+                return None, f"Supabase insert failed (status {getattr(response, 'status_code', 'unknown')}): {response}"
             
             return response.data[0], None
         
@@ -76,8 +81,8 @@ class ScheduleService:
         """
         try:
             response = supabase.table("barber_availability").update(update_data).eq("id", availability_id).execute()
-            if response.error:
-                return None, response.error.message
+            if not getattr(response, "data", None):
+                return None, f"Supabase insert failed (status {getattr(response, 'status_code', 'unknown')}): {response}"
             
             return response.data[0], None
         
@@ -97,8 +102,8 @@ class ScheduleService:
         """
         try:
             response = supabase.table("barber_availability").select("*").eq("barber_id", barber_id).execute()
-            if response.error:
-                return None, response.error.message
+            if not getattr(response, "data", None):
+                return None, f"Supabase insert failed (status {getattr(response, 'status_code', 'unknown')}): {response}"
             
             return response.data, None
         
