@@ -34,7 +34,8 @@ def list_appointments():
     """
     try:
         user = get_current_user()
-        user_id = user.get('id')
+        print("Current user:", user)
+        user_id = user.get('sub')
         user_role = user.get('role')
 
         # query params
