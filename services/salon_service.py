@@ -63,7 +63,21 @@ class SalonService:
         """
         return {"message": "Salon registered successfully", "salon_name": data.name, "salon_id": salon_id,  "verification_status": "pending"}
 
+    @staticmethod
+    def add_service_provider(salon_id, provider_id, bio=None, specialties=None, years_experience=None, is_active=True):
+        """
+        Add a service provider (barber) to a salon.
+        """
+        association = supabase.table("barbers").insert({
+            "salon_id": salon_id,
+            "user_id": provider_id,
+            "bio": bio,
+            "specialties": specialties,
+            "years_experience": years_experience,
+            "is_active": is_active,
+        }).execute()
 
+        return {"message": "Service provider added to salon successfully"}
     #Admin notification format may need to be changed
 
     @staticmethod
