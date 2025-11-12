@@ -1,0 +1,74 @@
+---
+tags:
+  - Appointments
+summary: Update an appointment
+description: >
+  Allows authorized users to update an existing appointment.  
+  Checks for schedule overlap and barber/salon consistency.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, example: "a1b2c3" }
+        start_at: { type: string, format: date-time, example: "2025-11-12T16:00:00Z" }
+        end_at: { type: string, format: date-time, example: "2025-11-12T16:30:00Z" }
+        notes: { type: string, example: "Move back 1 hour" }
+        status: { type: string, example: "rescheduled" }
+
+responses:
+  200:
+    description: Appointment updated successfully
+    schema:
+      type: object
+      properties:
+        message: { type: string, example: "Appointment updated successfully." }
+        appointment:
+          type: object
+          properties:
+            id: { type: string, example: "a1b2c3" }
+            start_at: { type: string, example: "2025-11-12T16:00:00Z" }
+            end_at: { type: string, example: "2025-11-12T16:30:00Z" }
+            status: { type: string, example: "rescheduled" }
+
+  400:
+    description: Validation or overlap error
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Rescheduled time overlaps with another appointment." }
+
+  403:
+    description: Forbidden
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Forbidden" }
+
+  404:
+    description: Not found
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Appointment not found" }
+
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Internal server error" }

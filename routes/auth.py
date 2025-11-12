@@ -11,11 +11,13 @@ from models.user import (
 )
 from services.auth_service import AuthService
 from middleware import login_required, role_required, get_current_user
+from flasgger.utils import swag_from
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
 
 @auth_bp.route('/signup', methods=['POST'])
+@swag_from("../docs/auth_signup.yml")
 def signup():
     """
     User signup endpoint.
@@ -50,6 +52,7 @@ def signup():
 
 
 @auth_bp.route('/login', methods=['POST'])
+@swag_from("../docs/auth_login.yml")
 def login():
     """
     User login endpoint.
@@ -80,6 +83,7 @@ def login():
 
 
 @auth_bp.route('/logout', methods=['POST'])
+@swag_from("../docs/auth_logout.yml")
 def logout():
     """
     User logout endpoint.
@@ -106,6 +110,7 @@ def logout():
 
 
 @auth_bp.route('/refresh', methods=['POST'])
+@swag_from("../docs/auth_refresh.yml")
 def refresh_token():
     """
     Refresh access token using refresh token.
@@ -141,6 +146,7 @@ def refresh_token():
 
 
 @auth_bp.route('/me', methods=['GET'])
+@swag_from("../docs/auth_me.yml")
 @login_required()
 def get_current_user_route():
     """
@@ -154,6 +160,7 @@ def get_current_user_route():
 
 
 @auth_bp.route('/profile', methods=['PUT'])
+@swag_from("../docs/auth_profile_update.yml")
 @login_required()
 def update_profile():
     """
@@ -191,6 +198,7 @@ def update_profile():
 
 @auth_bp.route('/users/<user_id>/role', methods=['PUT'])
 @role_required(['admin'], verify_with_supabase=True)
+@swag_from("../docs/auth_role_update.yml")
 def update_user_role(user_id: str):
     """
     Update user role (admin only).
@@ -220,6 +228,7 @@ def update_user_role(user_id: str):
 
 
 @auth_bp.route('/password-reset/request', methods=['POST'])
+@swag_from("../docs/auth_password_reset_request.yml")
 def request_password_reset():
     """
     Request password reset email.
@@ -243,6 +252,7 @@ def request_password_reset():
 
 
 @auth_bp.route('/password-reset/confirm', methods=['POST'])
+@swag_from("../docs/auth_password_reset_confirm.yml")
 def reset_password_confirm():
     """
     Complete password reset with token from email.
@@ -282,6 +292,7 @@ def reset_password_confirm():
 
 
 @auth_bp.route('/password/change', methods=['PUT'])
+@swag_from("../docs/auth_password_change.yml")
 @login_required()
 def change_password():
     """

@@ -105,7 +105,7 @@ def appeal_salon(salon_id):
 @salon_bp.route("/<salon_id>/approve", methods=["PATCH"])
 @login_required()
 @role_required(['admin'])
-@notify(["owner"],event_type="salon_verification",title="Salon Approved",
+@notify(["salon_owner"],event_type="salon_verification",title="Salon Approved",
 message_template="Your Salon has been approved."
 )
 @swag_from("../docs/salon_approve.yml")
@@ -122,7 +122,7 @@ def approve_salon(salon_id):
 @salon_bp.route("/<salon_id>/reject", methods=["PATCH"])
 @login_required()
 @role_required(['admin'])
-@notify(["owner"],event_type="salon_verification",title="Salon Denied",
+@notify(["salon_owner"],event_type="salon_verification",title="Salon Denied",
 message_template="Your Salon has been Denied. Reason(s): {reason} "
 )
 @swag_from("../docs/salon_reject.yml")

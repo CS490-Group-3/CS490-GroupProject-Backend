@@ -38,6 +38,12 @@ parameters:
     type: string
     example: "07102"
   - in: formData
+    name: timezone
+    type: string
+    required: false
+    description: "IANA timezone. If omitted, the server defaults to America/New_York. Examples: America/New_York, America/Chicago, America/Los_Angeles."
+    example: "America/New_York"
+  - in: formData
     name: phone
     type: string
     example: "9735551234"
