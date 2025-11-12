@@ -7,6 +7,7 @@ from models.appointment import (
 from services.appointment_service import AppointmentService
 from services.auth_service import AuthService
 from middleware import login_required, role_required, get_current_user, get_owned_salons
+from middleware.notify import notify
 
 appointments_bp = Blueprint('appointments', __name__, url_prefix='/api/appointments')
 
@@ -50,6 +51,12 @@ def list_appointments():
 @appointments_bp.route('/', methods=['PATCH'])
 @login_required()
 @role_required(['customer', 'admin', 'owner', 'barber'])
+@notify(
+    recipients=["barber", "user"], 
+    event_type="appointment_confirmation",
+    title="Appointment Updated",
+    message_template="The appointment at {salon_name} for {service_name} has been updated."
+)#notify user and barber upon update 
 def update_appointment():
     """
     Update an existing appointment.
@@ -70,8 +77,13 @@ def update_appointment():
         
         result, error = AppointmentService.update_appointment(appointment_id, update_data)
         
+    
+
         if error:
             return jsonify({"error": error}), 400
+    
+	#update the scheduled notification for appointment
+        NotificationService.schedule_upcoming_appointment(str(appointment_id))
         
         return jsonify({
             "message": "Appointment updated successfully.",
@@ -106,7 +118,8 @@ def change_appointment_status(id, status):
         
         if error:
             return jsonify({"error": error}), 400
-        
+
+
         return jsonify({
             "message": "Appointment status updated successfully.",
             "appointment": result.dict()

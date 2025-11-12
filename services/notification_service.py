@@ -49,6 +49,36 @@ class NotificationService:
         if data:
             supabase.table("notifications").insert(data).execute()
 
+            for notif in data:
+                NotificationService._send_email(notif)
+
+
+    @staticmethod
+    def _send_email(notif):
+        """
+        Send a transactional email (confirmation/reschedule) using Supabase function or SMTP.
+        """
+        try:
+            user = supabase.table("user_profiles").select("email, full_name").eq("user_id", notif["user_id"]).single().execute()
+            if not user.data or not user.data.get("email"):
+                return
+
+            subject = notif["title"]
+            body = notif["message"]
+
+            # Example: using Supabase Edge Function or SendGrid webhook
+            requests.post(
+                "https://<your-supabase-project>.functions.supabase.co/send-email",
+                json={
+                    "to": user.data["email"],
+                    "subject": subject,
+                    "body": body,
+                },
+                timeout=5,
+            )
+        except Exception as e:
+            print(f"[Email Error] {e}")
+
     #when an appointment is made(maybe confirmed) or updated we call to schedule reminder notifications  
     @staticmethod
     def schedule_upcoming_appointment(appointment_id):

@@ -14,7 +14,7 @@ salon_bp = Blueprint("salon_bp", __name__, url_prefix="/api/salons")
 #-----------------------------------1. SALONS (salon owners) 
 
 # Salon registration (requires user auth)
-#@login_required(['salon_owner'])
+#@role_required(['salon_owner'])
 @salon_bp.route("/apply", methods=["POST"])
 @login_required()
 @notify(["admins"],event_type="salon_verification",title="New Salon Application",
@@ -62,7 +62,7 @@ def register_salon():
 
 
 # Salon owner appeals
-#@login_required(['salon_owner'])
+#@role_required(['salon_owner'])
 @salon_bp.route("/<salon_id>/appeal", methods=["PUT"])
 @login_required()
 @notify(["admins"],event_type="salon_verification",title="Salon Appeal submitted",
