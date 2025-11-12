@@ -81,16 +81,18 @@ class AuthService:
             })
             
             if response.session and response.user:
+                session= dict(response.session.__dict__)
+                user = dict(response.user.__dict__)
                 # Get user profile with role
-                profile = AuthService.get_user_profile(response.user.id)
+                profile = AuthService.get_user_profile(user.get('id'))
                 
                 return {
-                    "access_token": response.session.access_token,
-                    "refresh_token": response.session.refresh_token,
-                    "expires_in": response.session.expires_in,
+                    "access_token": session.get('access_token'),
+                    "refresh_token": session.get('refresh_token'),
+                    "expires_in": session.get('expires_in'),
                     "user": {
-                        "id": response.user.id,
-                        "email": response.user.email,
+                        "id": user.get('id'),
+                        "email": user.get('email'),
                         "role": profile.get('role', 'customer') if profile else 'customer',
                         "first_name": profile.get('first_name', '') if profile else '',
                         "last_name": profile.get('last_name', '') if profile else ''
