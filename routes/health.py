@@ -3,11 +3,13 @@ Health check and system status routes.
 """
 from flask import Blueprint, jsonify
 from config import supabase
+from flasgger.utils import swag_from
 
 health_bp = Blueprint('health', __name__)
 
 """ Home endpoint - API information. """
 @health_bp.route('/', methods=['GET'])
+@swag_from("../docs/health_home.yml")
 def home():
     
     return jsonify({
@@ -18,6 +20,7 @@ def home():
 
 """ Health check endpoint - verifies Flask app and Supabase connection. """
 @health_bp.route('/health', methods=['GET'])
+@swag_from("../docs/health_check.yml")
 def health_check():
     try:
         response = supabase.table('user_details').select("count", count="exact").limit(0).execute()
@@ -35,4 +38,3 @@ def health_check():
             "supabase": "error",
             "error": str(e)
         }), 500
-
