@@ -1,0 +1,55 @@
+---
+tags:
+  - Schedule
+summary: Get barber weekly availability
+description: >
+  Returns the weekly availability blocks for the authenticated barber.  
+  The user must be linked to a barber profile; otherwise the request fails.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+responses:
+  200:
+    description: Availability retrieved successfully
+    schema:
+      type: object
+      properties:
+        availability:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, example: "0db9e0ab-6d58-4c1f-8aa6-f211fb32d1fd" }
+              barber_id: { type: string, example: "barber-123" }
+              day_of_week: { type: integer, example: 2 }
+              start_time: { type: string, example: "09:00:00" }
+              end_time: { type: string, example: "12:30:00" }
+              is_active: { type: boolean, example: true }
+
+  400:
+    description: Missing barber mapping or validation error
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Missing barber_id parameter" }
+
+  404:
+    description: Barber profile not found
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Barber not found" }
+
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Failed to load availability" }

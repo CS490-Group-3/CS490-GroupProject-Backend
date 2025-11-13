@@ -174,6 +174,7 @@ def get_salon_status_history(salon_id):
 @salon_bp.route("/provider", methods=["POST"])
 @login_required()
 @role_required(['admin', 'salon_owner'])
+@swag_from("../docs/salon_add_provider.yml")
 def add_service_provider():
     """
     Add a new service provider to a salon.

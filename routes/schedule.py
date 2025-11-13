@@ -9,11 +9,13 @@ from models.schedule import (
 from services.auth_service import AuthService
 from services.schedule_service import ScheduleService
 from middleware import login_required, role_required, get_current_user
+from flasgger.utils import swag_from
 
 schedule_bp = Blueprint('schedule', __name__, url_prefix='/api/schedule')
 
 @schedule_bp.route('/availability', methods=['GET'])
 @login_required()
+@swag_from("../docs/schedule_get_availability.yml")
 def get_availability():
     """
     Get barber weekly availability.
@@ -48,6 +50,7 @@ def get_availability():
 @schedule_bp.route('/availability', methods=['POST'])
 @login_required()
 @role_required(['barber', 'admin', 'salon_owner'])
+@swag_from("../docs/schedule_create_availability.yml")
 def create_availability():
     """
     Create barber weekly availability.
@@ -94,6 +97,7 @@ def create_availability():
 @schedule_bp.route('/availability', methods=['PATCH'])
 @login_required()
 @role_required(['barber', 'admin', 'salon_owner'])
+@swag_from("../docs/schedule_update_availability.yml")
 def update_availability():
     """
     Update barber weekly availability.
