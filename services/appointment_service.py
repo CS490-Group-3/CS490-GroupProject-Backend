@@ -2,6 +2,7 @@ from config import supabase
 from typing import Dict, Optional, List, Tuple
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
+from services.auth_service import AuthService
 
 class AppointmentService:
     # ------ helpers ------
@@ -111,7 +112,7 @@ class AppointmentService:
         if role == "customer":
             return appt["customer_id"] == uid
         if role == "barber":
-            barber_id = AppointmentService._get_barber_id_for_user(uid)
+            barber_id, _ = AuthService.get_barber_id(uid)
             return barber_id and appt["barber_id"] == barber_id
         if role == "salon_owner":
             salons = supabase.table("salons").select("id").eq("owner_id", uid).execute()
@@ -369,7 +370,7 @@ class AppointmentService:
                 if current["salon_id"] not in owned:
                     return None, "Forbidden"
             elif role == "barber":
-                barber_id = AppointmentService._get_barber_id_for_user(uid)
+                barber_id, _ = AuthService.get_barber_id(uid)
                 if not barber_id or current["barber_id"] != barber_id:
                     return None, "Forbidden"
             else:
@@ -408,7 +409,7 @@ class AppointmentService:
             if current["salon_id"] not in owned:
                 return None, "Forbidden"
         elif role == "barber":
-            barber_id = AppointmentService._get_barber_id_for_user(uid)
+            barber_id, _ = AuthService.get_barber_id(uid)
             if not barber_id or current["barber_id"] != barber_id:
                 return None, "Forbidden"
         else:
@@ -421,20 +422,6 @@ class AppointmentService:
         return response.data[0], None
 
 
-    @staticmethod 
-    def _get_barber_id_for_user(user_id: str) -> str | None:
-        """Translate authenticated barber's user_id -> barbers.id"""
-        response = (
-            supabase.table("barbers")
-            .select("id")
-            .eq("user_id", user_id)
-            .single()
-            .execute()
-        )
-        if getattr(response, "error", None) or not response.data:
-            return None
-        return response.data.get("id")
-    
     # ------ availability ------
     @staticmethod
     def is_barber_available(salon_id: str, barber_id: str, start_at_iso: str, end_at_iso: str) -> Tuple[bool, Optional[str]]:
