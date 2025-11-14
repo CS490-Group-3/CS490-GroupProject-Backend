@@ -136,6 +136,19 @@ class SalonService:
             return response.data, None
         except Exception as e:
             return None, str(e)
+    @staticmethod
+    def get_salon_employees(salon_id):
+        """
+        Get all service providers (barbers) for a salon.
+        """
+        try:
+            #matches salon_id in barbers table to get user details from user_profiles
+            response = supabase.table("barbers").select("*, user_details(*)").eq("salon_id", salon_id).execute()
+            if not response.data:
+                return {"error":"No employees found for this salon"}
+            return response.data
+        except Exception as e:
+            return None, str(e)
     #Admin notification format may need to be changed
 
     @staticmethod

@@ -217,3 +217,17 @@ def get_salon_services(salon_id):
         return jsonify({"services": result}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+@salon_bp.route("/<salon_id>/employees", methods=["GET"])
+@login_required()
+def get_salon_employees(salon_id):
+    """
+    Get all service providers (barbers) for a salon.
+    """
+    try:
+        result = SalonService.get_salon_employees(salon_id)
+        if result[0] is None:
+            return jsonify({"error": result[1]}), 404
+        return jsonify({"employees": result}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
