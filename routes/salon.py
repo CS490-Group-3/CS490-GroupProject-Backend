@@ -127,7 +127,7 @@ def create_promotional_offer(salon_id):
 @salon_bp.route("/<salon_id>/approve", methods=["PATCH"])
 @login_required()
 @role_required(['admin'])
-@notify(["owner"],event_type="salon_verification",title="Salon Approved",
+@notify(["salon_owner"],event_type="salon_verification",title="Salon Approved",
 message_template="Your Salon has been approved."
 )
 @swag_from("../docs/salon_approve.yml")
@@ -144,7 +144,7 @@ def approve_salon(salon_id):
 @salon_bp.route("/<salon_id>/reject", methods=["PATCH"])
 @login_required()
 @role_required(['admin'])
-@notify(["owner"],event_type="salon_verification",title="Salon Denied",
+@notify(["salon_owner"],event_type="salon_verification",title="Salon Denied",
 message_template="Your Salon has been Denied. Reason(s): {reason} "
 )
 @swag_from("../docs/salon_reject.yml")
@@ -196,6 +196,7 @@ def get_salon_status_history(salon_id):
 @salon_bp.route("/provider", methods=["POST"])
 @login_required()
 @role_required(['admin', 'salon_owner'])
+@swag_from("../docs/salon_add_provider.yml")
 def add_service_provider():
     """
     Add a new service provider to a salon.
@@ -222,5 +223,33 @@ def add_service_provider():
         
         return jsonify(result), 201
         
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@salon_bp.route("/<salon_id>/services", methods=["GET"])
+@login_required()
+def get_salon_services(salon_id):
+    """
+    Get all services for a salon.
+    """
+    try:
+        result = SalonService.get_salon_services(salon_id)
+        if result[0] is None:
+            return jsonify({"error": result[1]}), 404
+        return jsonify({"services": result}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@salon_bp.route("/<salon_id>/employees", methods=["GET"])
+@login_required()
+def get_salon_employees(salon_id):
+    """
+    Get all service providers (barbers) for a salon.
+    """
+    try:
+        result = SalonService.get_salon_employees(salon_id)
+        if result[0] is None:
+            return jsonify({"error": result[1]}), 404
+        return jsonify({"employees": result}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

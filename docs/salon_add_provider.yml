@@ -1,0 +1,86 @@
+---
+tags:
+  - Salon
+summary: Add a service provider to a salon
+description: >
+  Creates a barber profile and links it to a salon using an existing user account.  
+  Only admins or salon owners may perform this action.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required: [salon_id, user_id]
+      properties:
+        salon_id:
+          type: string
+          description: Salon UUID the provider should belong to
+          example: "salon-123"
+        user_id:
+          type: string
+          description: User UUID that will become the provider
+          example: "user-456"
+        bio:
+          type: string
+          example: "Fade specialist with 8 years of experience."
+        specialties:
+          type: array
+          items:
+            type: string
+          example: ["fades", "braids"]
+        years_experience:
+          type: integer
+          example: 8
+        is_active:
+          type: boolean
+          default: true
+          example: true
+
+responses:
+  201:
+    description: Provider added successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Service provider added to salon successfully"
+
+  400:
+    description: Validation error or Supabase failure
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Missing required fields"
+
+  403:
+    description: Forbidden
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unauthorized"
+
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred"

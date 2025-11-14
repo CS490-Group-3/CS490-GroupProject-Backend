@@ -8,7 +8,7 @@ class NotificationService:
         """
         Send notifications to given recipients.
 
-        recipients: list of roles or user_ids (e.g., ['admins', 'owner'])
+        recipients: list of roles or user_ids (e.g., ['admins', 'salon_owner'])
         event_type: string (e.g., 'salon_verification')
         title: string
         message: formatted string, may contain placeholders like {salon_name}
@@ -30,7 +30,7 @@ class NotificationService:
                 continue
 
             # --- Salon Owner ---
-            if r == "owner" and related_id:
+            if r == "salon_owner" and related_id:
                 salon = supabase.table("salons").select("owner_id, name").eq("id", related_id).single().execute()
                 if salon.data:
                     owner_id = salon.data["owner_id"]

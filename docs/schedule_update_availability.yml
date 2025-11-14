@@ -1,0 +1,78 @@
+---
+tags:
+  - Schedule
+summary: Update barber weekly availability
+description: >
+  Updates already-created weekly availability blocks.  
+  Provide the availability entry ID plus any fields that should change.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required: [availability]
+      properties:
+        availability:
+          type: array
+          description: List of availability blocks to update
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: string
+                description: Availability entry UUID
+                example: "7a0f4671-38ca-4286-88c6-5a309a9ed7df"
+              day_of_week:
+                type: integer
+                description: 0 = Sunday ... 6 = Saturday
+                example: 3
+              start_time:
+                type: string
+                example: "10:00:00"
+              end_time:
+                type: string
+                example: "14:00:00"
+              is_active:
+                type: boolean
+                example: false
+
+responses:
+  201:
+    description: Availability updated
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Availability updated successfully."
+
+  400:
+    description: Validation error or missing payload
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Invalid JSON body"
+
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Failed to update availability"

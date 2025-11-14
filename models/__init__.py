@@ -24,6 +24,12 @@ from .schedule import (
     BarberUnavailabilityCreateRequest,
     BarberUnavailabilityUpdateRequest
 )
+
+from .services import (
+    ServiceCreateRequest,
+    ServiceUpdateRequest,
+    ServiceResponse
+)
 __all__ = [
     'UserSignupRequest',
     'UserLoginRequest',
@@ -39,6 +45,9 @@ __all__ = [
     'BarberAvailabilityCreateRequest',
     'BarberAvailabilityUpdateRequest',
     'BarberUnavailabilityCreateRequest',
-    'BarberUnavailabilityUpdateRequest'
+    'BarberUnavailabilityUpdateRequest',
+    'ServiceCreateRequest',
+    'ServiceUpdateRequest',
+    'ServiceResponse'
 ]
 
