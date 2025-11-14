@@ -94,6 +94,61 @@ class SalonService:
             return {"message": "Service provider added to salon successfully"}, None
         except Exception as e:
             return None, str(e)
+        
+    @staticmethod
+    def create_service(salon_id, name, description, duration_minutes, price, is_active=True):
+        """
+        Create a new service for a salon.
+        """
+        try:
+            supabase.table("services").insert({
+                "salon_id": salon_id,
+                "name": name,
+                "description": description,
+                "duration_minutes": duration_minutes,
+                "price": price,
+                "is_active": is_active,
+            }).execute()
+            return {"message": "Service created successfully"}, None
+        except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def get_service(service_id):
+        """
+        Retrieve service details by ID.
+        """
+        try:
+            response = supabase.table("services").select("*").eq("id", service_id).single().execute()
+            if not response.data:
+                return "Service not found",
+            return response.data, None
+        except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def get_salon_services(salon_id):
+        """
+        Get all services for a salon.
+        """
+        try:
+            response = supabase.table("services").select("*").eq("salon_id", salon_id).execute()
+            if not response.data:
+                return {"error":"No services found for this salon"}
+            return response.data, None
+        except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def get_salon_employees(salon_id):
+        """
+        Get all service providers (barbers) for a salon.
+        """
+        try:
+            #matches salon_id in barbers table to get user details from user_profiles
+            response = supabase.table("barbers").select("*, user_details(*)").eq("salon_id", salon_id).execute()
+            if not response.data:
+                return {"error":"No employees found for this salon"}
+            return response.data
+        except Exception as e:
+            return None, str(e)
     #Admin notification format may need to be changed
 
     @staticmethod
