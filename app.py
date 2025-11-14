@@ -7,7 +7,7 @@ from config import FLASK_DEBUG
 import sys
 from flasgger import Swagger
 
-from routes import health_bp, auth_bp, appointments_bp, schedule_bp, salon_bp, upload_bp
+from routes import health_bp, auth_bp, appointments_bp, schedule_bp, salon_bp, upload_bp, services_bp
 
 def create_app():
     app = Flask(__name__)
@@ -26,7 +26,7 @@ def create_app():
     app.register_blueprint(appointments_bp)
     app.register_blueprint(schedule_bp)
     app.register_blueprint(upload_bp)
-
+    app.register_blueprint(services_bp)
     # Error handlers
     @app.errorhandler(404)
     def not_found(error):
