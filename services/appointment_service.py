@@ -78,3 +78,89 @@ class AppointmentService:
             return appointments, None
         except Exception as e:
             return None, str(e)
+
+
+
+    @staticmethod
+    def approve_appointment(appointment_id, user_id):
+        """
+        Approve an appointment assigned to this barber.
+        """
+        try:
+            barber = (
+            supabase.table("barbers")
+            .select("id")
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+
+            if not barber.data:
+                return None, "You are not a registered barber"
+
+            barber_id = barber.data["id"]
+            appt = (
+                supabase.table("appointments")
+                .select("id, barber_id, status")
+                .eq("id", appointment_id)
+                .single()
+                .execute()
+            )
+            if not appt.data:
+                return None, "Appointment not found"
+            if appt.data["barber_id"] != barber_id:
+                return None, "Unauthorized"
+            if appt.data["status"] != "scheduled":
+                return None, f"Cannot approve appointment with status '{appt.data['status']}'"
+  
+
+            supabase.table("appointments").update({
+                "status": "confirmed",
+            }).eq("id", appointment_id).execute()
+
+            return appt.data, None
+        except Exception as e:
+            return None, str(e)
+
+
+    @staticmethod
+    def deny_appointment(appointment_id, user_id):
+        """
+        Deny or reject an appointment.
+        """
+        try:
+            barber = (
+            supabase.table("barbers")
+            .select("id")
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+
+            if not barber.data:
+                return None, "You are not a registered barber"
+
+            barber_id = barber.data["id"]
+
+            appt = (
+                supabase.table("appointments")
+                .select("id, barber_id, status")
+                .eq("id", appointment_id)
+                .single()
+                .execute()
+            )
+            if not appt.data:
+                return None, "Appointment not found"
+            if appt.data["barber_id"] != barber_id:
+                return None, "Unauthorized"
+
+            if appt.data["status"] != "scheduled":
+                return None, f"Cannot approve appointment with status '{appt.data['status']}'"
+
+            supabase.table("appointments").update({
+                "status": "cancelled",
+            }).eq("id", appointment_id).execute()
+
+            return appt.data, None
+        except Exception as e:
+            return None, str(e)

@@ -73,23 +73,41 @@ serve(async (req) => {
           continue;
         }
 
-        #need to test after deployed
+        //need to test after deployed
         const trackingUrl = `https://cs490-groupproject-backend-production.up.railway.app/api/notifications/track/${notif.id}.png`;
 
-        const htmlBody = `
+        let htmlBody = `
           <div style="font-family: Arial, sans-serif;">
             <p>${notif.message}</p>
-            <p style="font-size:12px;color:#888;">— The Salonica Team</p>
+        `;
+
+// If this is an appointment status notification, add action buttons
+        if (notif.notification_type === "appointment_status") {
+          const approveUrl = `https://frontend.salonica.app/appointments/${notif.related_id}/approve`;
+          const denyUrl = `https://frontend.salonica.app/appointments/${notif.related_id}/deny`;
+
+          htmlBody += `
+            <p style="margin-top:20px;">
+              <a href="${approveUrl}" style="background:#28a745;color:#fff;padding:8px 14px;text-decoration:none;border-radius:6px;">Approve</a>
+              <a href="${denyUrl}" style="background:#dc3545;color:#fff;padding:8px 14px;text-decoration:none;border-radius:6px;margin-left:8px;">Deny</a>
+            </p>
+          `;
+        }
+
+        htmlBody += `
+            <p style="font-size:12px;color:#888;margin-top:20px;">— The Salonica Team</p>
             <img src="${trackingUrl}" alt="" width="1" height="1" style="display:none;">
           </div>
         `;
 
-        // --- Send email through SendGrid ---
         const payload = {
           personalizations: [{ to: [{ email: userEmail.email }] }],
           from: { email: FROM_EMAIL, name: FROM_NAME },
-          subject: notif.title || "Notification from Salonica App",
-          content: [{ type: "text/plain", value: notif.message || "" }, { type: "text/html", value: htmlBody || "" }],
+          subject: notif.title || "Notification from Salonica",
+          content: [
+            { type: "text/plain", value: notif.message || "" },
+            { type: "text/html", value: htmlBody },
+          ],
         };
 
         const emailRes = await fetch("https://api.sendgrid.com/v3/mail/send", {

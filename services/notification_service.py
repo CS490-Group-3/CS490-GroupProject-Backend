@@ -41,9 +41,9 @@ class NotificationService:
 
             # --- Appointment User ---
             if r == "user" and related_id:
-                appt = supabase.table("appointments").select("user_id").eq("id", related_id).single().execute()
+                appt = supabase.table("appointments").select("customer_id").eq("id", related_id).single().execute()
                 if appt.data:
-                    data.append(NotificationService._record(appt.data["user_id"], event_type, title, message, related_id))
+                    data.append(NotificationService._record(appt.data["customer_id"], event_type, title, message, related_id))
                 continue
 
         if data:
@@ -59,7 +59,7 @@ class NotificationService:
         Send a transactional email (confirmation/reschedule) using Supabase function or SMTP.
         """
         try:
-            user = supabase.table("user_profiles").select("email, full_name").eq("user_id", notif["user_id"]).single().execute()
+            user = supabase.table("user_details").select("email").eq("user_id", notif["user_id"]).single().execute()
             if not user.data or not user.data.get("email"):
                 return
 
@@ -308,5 +308,6 @@ class NotificationService:
             "status": "pending",
             "related_id": related_id,
             "created_at": datetime.utcnow().isoformat(),
+            "scheduled_for": datetime.utcnow().isoformat(), 
         }
 
