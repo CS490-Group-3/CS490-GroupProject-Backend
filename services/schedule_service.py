@@ -55,11 +55,17 @@ class ScheduleService:
                 "end_time": end_time,
                 "is_active": is_active
             }
-            response = supabase.table("barber_availability").insert(data).execute()
-            if not getattr(response, "data", None):
-                return None, f"Supabase insert failed (status {getattr(response, 'status_code', 'unknown')}): {response}"
+            availability_exists = supabase.table("barber_availability").select("id").eq("barber_id", barber_id).eq("day_of_week", day_of_week).execute()
             
-            return response.data[0], None
+            # Check if availability for the same day already exists if it does not exist, create new entry
+            if not getattr(availability_exists, "data", None):
+                response = supabase.table("barber_availability").insert(data).execute()
+                if not getattr(response, "data", None):
+                    return None, f"Supabase insert failed (status {getattr(response, 'status_code', 'unknown')}): {response}"
+            
+                return response.data[0], None
+            # If it exists, return error
+            return None, f"Availability for barber {barber_id} on day {day_of_week} already exists."
         
         except Exception as e:
             return None, str(e)
@@ -80,6 +86,7 @@ class ScheduleService:
             Tuple containing the updated availability dict or None, and an error message or None.
         """
         try:
+            
             response = supabase.table("barber_availability").update(update_data).eq("id", availability_id).execute()
             if not getattr(response, "data", None):
                 return None, f"Supabase insert failed (status {getattr(response, 'status_code', 'unknown')}): {response}"
