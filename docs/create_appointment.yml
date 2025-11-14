@@ -1,0 +1,74 @@
+---
+tags:
+  - Appointments
+summary: Create an appointment
+description: >
+  Allows a user to create a new appointment.  
+  Customers can only create appointments for themselves.  
+  Other roles must provide a `customer_id`.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required: [barber_id, service_id, salon_id, start_at]
+      properties:
+        customer_id:
+          type: string
+          description: Required if not a customer
+          example: "cust-123"
+        barber_id: { type: string, example: "barb-111" }
+        service_id: { type: string, example: "svc-9" }
+        salon_id: { type: string, example: "salon-22" }
+        start_at: { type: string, format: date-time, example: "2025-11-12T15:00:00Z" }
+        end_at: { type: string, format: date-time, example: "2025-11-12T15:30:00Z" }
+        notes: { type: string, example: "Low skin fade" }
+
+responses:
+  201:
+    description: Appointment created successfully
+    schema:
+      type: object
+      properties:
+        id: { type: string, example: "a1b2c3" }
+        customer_id: { type: string, example: "cust-123" }
+        barber_id: { type: string, example: "barb-111" }
+        service_id: { type: string, example: "svc-9" }
+        salon_id: { type: string, example: "salon-22" }
+        start_at: { type: string, format: date-time, example: "2025-11-12T15:00:00Z" }
+        end_at: { type: string, format: date-time, example: "2025-11-12T15:30:00Z" }
+        status: { type: string, example: "scheduled" }
+        notes: { type: string, example: "Low skin fade" }
+
+  400:
+    description: Validation or overlap error
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Appointment time overlaps with an existing appointment." }
+
+  403:
+    description: Forbidden
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Forbidden" }
+
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Internal server error" }

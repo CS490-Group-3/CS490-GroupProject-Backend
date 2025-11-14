@@ -1,0 +1,25 @@
+---
+tags:
+  - Health
+summary: API welcome message
+description: >
+  Returns a simple payload describing the Salonica API, its status, and version.  
+  Useful for verifying that the service is running.
+produces:
+  - application/json
+responses:
+  200:
+    description: API information payload
+    schema:
+      type: object
+      properties:
+        message: { type: string, example: "Salonica: Salon Booking Platform API" }
+        version: { type: string, example: "1.0.0" }
+        status: { type: string, example: "running" }
+
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Internal server error" }

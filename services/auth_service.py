@@ -63,6 +63,31 @@ class AuthService:
             return None, f"Unexpected error: {str(e)}"
     
     @staticmethod
+    def get_user_profile(user_id: str) -> Optional[Dict]:
+        """
+        Get user profile from user_profiles table.
+        
+        Args:
+            user_id: User's UUID
+        
+        Returns:
+            User profile dict or None
+        """
+        try:
+            print("Getting profile for user_id:", user_id)
+            response = supabase.table('user_details').select('first_name, last_name, email, id, role').eq("id", user_id).execute()
+            
+            print("Profile response:", response)
+
+            # response.data is a list of dicts
+            if response.data and len(response.data) > 0:
+                return response.data[0]  # first row as a dict
+            return None
+        except Exception as e:
+            print("Error fetching user profile:", e)
+            return None
+    
+    @staticmethod
     def login(email: str, password: str) -> Tuple[Dict, Optional[str]]:
         """
         Authenticate user and return session.
@@ -81,19 +106,22 @@ class AuthService:
             })
             
             if response.session and response.user:
+                session= dict(response.session.__dict__)
+                user = dict(response.user.__dict__)
                 # Get user profile with role
-                profile = AuthService.get_user_profile(response.user.id)
-                
+                profile = AuthService.get_user_profile(user.get('id'))
+                print("Profile:", profile)
+                print("first name", profile.get('first_name', '') if profile else '')
                 return {
-                    "access_token": response.session.access_token,
-                    "refresh_token": response.session.refresh_token,
-                    "expires_in": response.session.expires_in,
+                    "access_token": session.get('access_token'),
+                    "refresh_token": session.get('refresh_token'),
+                    "expires_in": session.get('expires_in'),
                     "user": {
-                        "id": response.user.id,
-                        "email": response.user.email,
+                        "id": user.get('id'),
+                        "email": user.get('email'),
                         "role": profile.get('role', 'customer') if profile else 'customer',
-                        "first_name": profile.get('first_name', '') if profile else '',
-                        "last_name": profile.get('last_name', '') if profile else ''
+                        "first_name": profile.get('first_name', ''),
+                        "last_name": profile.get('last_name', '')
                     }
                 }, None
             else:
@@ -184,28 +212,6 @@ class AuthService:
             return None, "Invalid or expired token"
         except Exception as e:
             return None, str(e)
-    
-    @staticmethod
-    def get_user_profile(user_id: str) -> Optional[Dict]:
-        """
-        Get user profile from user_profiles table.
-        
-        Args:
-            user_id: User's UUID
-        
-        Returns:
-            User profile dict or None
-        """
-        try:
-            response = supabase.table('user_profiles')\
-                .select('*')\
-                .eq('user_id', user_id)\
-                .single()\
-                .execute()
-            
-            return response.data if response.data else None
-        except Exception:
-            return None
     
     @staticmethod
     def update_user_profile(
@@ -404,9 +410,9 @@ class AuthService:
             response = supabase.table('barbers')\
                 .select('id')\
                 .eq('user_id', user_id)\
-                .limit(1)\
                 .execute()
             
+            print("Barber response:", response)
             if response.data:
                 return response.data[0]['id'], None
             else:

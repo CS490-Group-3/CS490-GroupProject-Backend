@@ -1,10 +1,21 @@
 from config import supabase
 from datetime import datetime
 from services.upload_file import StorageService
+from zoneinfo import ZoneInfo
 import uuid
 
 class SalonService:
-
+    #------------------------------------helpers
+    @staticmethod
+    def _clean_tz(tz: str | None) -> str:
+        DEFAULT_TZ = "America/New_York"
+        if not tz:
+            return DEFAULT_TZ
+        try:
+            ZoneInfo(tz)   # raises if invalid
+            return tz
+        except Exception:
+            return DEFAULT_TZ
 
     #------------------------------------1. SALONS
     """registration and appeals made by salon owners """
@@ -28,6 +39,7 @@ class SalonService:
             "description": data.description,
             "owner_id": owner_id,
             "status": "pending",
+            "timezone": SalonService._clean_tz(getattr(data, "timezone", None)),
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
         }).execute()
@@ -63,7 +75,25 @@ class SalonService:
         """
         return {"message": "Salon registered successfully", "salon_name": data.name, "salon_id": salon_id,  "verification_status": "pending"}
 
+    @staticmethod
+    def add_service_provider(salon_id, provider_id, bio=None, specialties=None, years_experience=None, is_active=True):
+        """
+        Add a service provider (barber) to a salon.
+        """
+        specialties = specialties or []
 
+        try:
+            supabase.table("barbers").insert({
+                "salon_id": salon_id,
+                "user_id": provider_id,
+                "bio": bio,
+                "specialties": specialties,
+                "years_experience": years_experience,
+                "is_active": is_active,
+            }).execute()
+            return {"message": "Service provider added to salon successfully"}, None
+        except Exception as e:
+            return None, str(e)
     #Admin notification format may need to be changed
 
     @staticmethod
@@ -84,13 +114,15 @@ class SalonService:
             return {"error": "You are not authorized to appeal this salon."}, 403
         
 
-        allowed_fields = ["name", "description", "address", "phone", "license_url", "logo_url"]
+        allowed_fields = ["name", "description", "address", "phone", "license_url", "logo_url", "timezone"]
         valid_updates = {k: v for k, v in (updates or {}).items() if k in allowed_fields}
 
         if license_file:
             valid_updates["license_url"] = StorageService.upload_file(license_file, salon_id, "license")
         if logo_file:
             valid_updates["logo_url"] = StorageService.upload_file(logo_file, salon_id, "logo")
+        if "timezone" in valid_updates:
+            valid_updates["timezone"] = SalonService._clean_tz(valid_updates["timezone"])
 
         if valid_updates:
             valid_updates["status"] = "pending"

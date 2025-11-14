@@ -18,6 +18,7 @@ class SalonRegisterRequest(BaseModel):
     description: Optional[str] = Field(None, max_length=255)
     logo_url: Optional[str] = None
     license_url: Optional[str] = Field(None, description="Public URL to uploaded license")
+    timezone: Optional[str] = "America/New_York"
 
     @model_validator(mode="before")
     def at_least_one_contact(cls, values):

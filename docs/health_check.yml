@@ -1,0 +1,29 @@
+---
+tags:
+  - Health
+summary: Service health check
+description: >
+  Confirms that the Flask app is running and that Supabase/database connectivity works.  
+  Returns healthy/unhealthy status plus diagnostic details.
+produces:
+  - application/json
+responses:
+  200:
+    description: Application is healthy
+    schema:
+      type: object
+      properties:
+        status: { type: string, example: "healthy" }
+        flask: { type: string, example: "running" }
+        supabase: { type: string, example: "connected" }
+        database: { type: string, example: "accessible" }
+
+  500:
+    description: Health check failed
+    schema:
+      type: object
+      properties:
+        status: { type: string, example: "unhealthy" }
+        flask: { type: string, example: "running" }
+        supabase: { type: string, example: "error" }
+        error: { type: string, example: "timeout while querying user_details" }
