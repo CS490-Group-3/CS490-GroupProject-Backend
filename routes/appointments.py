@@ -6,6 +6,7 @@ from models.appointment import (
     AppointmentUpdateRequest
 )
 from services.appointment_service import AppointmentService
+from services.auth_service import AuthService
 from middleware import login_required, role_required, get_current_user, get_owned_salons
 
 appointments_bp = Blueprint('appointments', __name__, url_prefix='/api/appointments')
@@ -61,9 +62,10 @@ def list_appointments():
         elif user_role == 'barber':
             # fetch appointments for barber
             # must first lookup barber ID with user ID
-            barber_id = AppointmentService._get_barber_id_for_user(user_id)
+            barber_id, barber_error = AuthService.get_barber_id(user_id)
             if not barber_id:
-                return jsonify({"error": "No barber profile found for user"}), 404
+                message = barber_error or "No barber profile found for user"
+                return jsonify({"error": message}), 404
             appointments, error = AppointmentService.get_appointments_by_barber(barber_id, when, status, page, limit)
         elif user_role == "admin":
             # fetch appointments according to filters
@@ -257,4 +259,3 @@ def get_appointment(appointment_id):
         return jsonify(row), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
