@@ -120,7 +120,19 @@ class SalonService:
         try:
             response = supabase.table("services").select("*").eq("id", service_id).single().execute()
             if not response.data:
-                return None, "Service not found"
+                return "Service not found",
+            return response.data, None
+        except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def get_salon_services(salon_id):
+        """
+        Get all services for a salon.
+        """
+        try:
+            response = supabase.table("services").select("*").eq("salon_id", salon_id).execute()
+            if not response.data:
+                return {"error":"No services found for this salon"}
             return response.data, None
         except Exception as e:
             return None, str(e)

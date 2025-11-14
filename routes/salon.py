@@ -203,3 +203,17 @@ def add_service_provider():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@salon_bp.route("/<salon_id>/services", methods=["GET"])
+@login_required()
+def get_salon_services(salon_id):
+    """
+    Get all services for a salon.
+    """
+    try:
+        result = SalonService.get_salon_services(salon_id)
+        if result[0] is None:
+            return jsonify({"error": result[1]}), 404
+        return jsonify({"services": result}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
