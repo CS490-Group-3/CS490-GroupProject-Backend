@@ -31,6 +31,7 @@ def get_availability_slots():
     return jsonify({"slots": slots}), 200
 
 # list apptmts: GET / 
+@appointments_bp.route('', methods=['GET'])
 @appointments_bp.route('/', methods=['GET'])
 @login_required()
 @role_required(['customer', 'admin', 'salon_owner', 'barber'])
@@ -105,6 +106,7 @@ def list_appointments():
         return jsonify({"error": str(e)}), 500
 
 # create: POST /
+@appointments_bp.route("", methods=["POST"])
 @appointments_bp.route("/", methods=["POST"])
 @login_required()
 @role_required(["customer", "salon_owner", "barber", "admin"])
@@ -125,6 +127,7 @@ def create_appointment():
         return jsonify({"error": str(e)}), 500
 
 # update: PATCH /
+@appointments_bp.route('', methods=['PATCH'])
 @appointments_bp.route('/', methods=['PATCH'])
 @login_required()
 @role_required(['customer', 'admin', 'salon_owner', 'barber'])
