@@ -7,8 +7,10 @@ from flasgger.utils import swag_from
 from config import supabase
 
 services_bp = Blueprint("services_bp", __name__, url_prefix="/api/services")
+services_bp.strict_slashes = False
 
-@services_bp.route("/", methods=["GET"])
+@services_bp.route("", methods=["GET"], strict_slashes=False)
+@services_bp.route("/", methods=["GET"], strict_slashes=False)
 @login_required()
 def list_services_route():
     """
@@ -29,7 +31,7 @@ def list_services_route():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@services_bp.route("/", methods=["POST"])
+@services_bp.route("/", methods=["POST"], strict_slashes=False)
 @login_required()
 @role_required(['salon_owner'])
 def create_service():
@@ -59,7 +61,7 @@ def create_service():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
-@services_bp.route("/<service_id>", methods=["GET"])
+@services_bp.route("/<service_id>", methods=["GET"], strict_slashes=False)
 @login_required()
 def get_service(service_id):
     """
