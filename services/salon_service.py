@@ -179,7 +179,23 @@ class SalonService:
             return response.data
         except Exception as e:
             return None, str(e)
-    
+    @staticmethod
+    def salon_owner_employee_search(query_str):
+        """
+        Search by email for service providers (barbers) to add to a salon.
+        """
+        try:
+            response = supabase.table("user_details").select("*").ilike("email", f"%{query_str}%").eq("role", "barber").execute()
+            if not response.data:
+                return {"error":"No service providers found matching the search criteria"}
+            user_ids= [item["id"] for item in response.data]
+            barber_response = supabase.table("barbers").select("user_id, is_active").in_("user_id", user_ids).eq("is_active", True).execute()
+            return barber_response.data
+            
+            
+
+        except Exception as e:
+            return None, str(e)
     @staticmethod
     def get_salon_tags(salon_id):
         """
