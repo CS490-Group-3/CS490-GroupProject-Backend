@@ -14,6 +14,22 @@ appointments_bp.strict_slashes = False
 
 # ---------- endpoints ----------
 
+# availability helper
+@appointments_bp.route("/availability", methods=["GET"])
+@login_required()
+@role_required(['customer', 'admin', 'salon_owner', 'barber'])
+def get_availability_slots():
+    salon_id = request.args.get("salon_id")
+    barber_id = request.args.get("barber_id")
+    service_id = request.args.get("service_id")
+    date_str = request.args.get("date")
+    if not all([salon_id, barber_id, service_id, date_str]):
+        return jsonify({"error": "salon_id, barber_id, service_id, and date are required"}), 400
+    slots, error = AppointmentService.get_available_slots(salon_id, barber_id, service_id, date_str)
+    if error:
+        return jsonify({"error": error}), 400
+    return jsonify({"slots": slots}), 200
+
 # list apptmts: GET / 
 @appointments_bp.route('/', methods=['GET'])
 @login_required()
@@ -212,8 +228,10 @@ def confirm_or_deny(appointment_id):
     """
     try:
         user = get_current_user()
-        action = (request.get_json() or {}).get("action")  # "confirm" or "deny"
-        updated, error = AppointmentService.confirm_or_deny(appointment_id, action, user=user)
+        body = request.get_json() or {}
+        action = body.get("action")  # "confirm" or "deny"
+        reason = body.get("reason")
+        updated, error = AppointmentService.confirm_or_deny(appointment_id, action, user=user, reason=reason)
         if error == "Forbidden":
             return jsonify({"error": error}), 403
         elif error:
@@ -238,6 +256,24 @@ def mark_completed(appointment_id):
     elif error:
         return jsonify({"error": error}), 400
     return jsonify(data), 200
+
+# create/update review
+@appointments_bp.route("/<appointment_id>/review", methods=["POST"])
+@login_required()
+@role_required(["customer"])
+def create_review(appointment_id):
+    user = get_current_user()
+    body = request.get_json() or {}
+    stars = body.get("stars")
+    comment = body.get("comment", "")
+    if stars is None:
+        return jsonify({"error": "stars is required"}), 400
+    review, error = AppointmentService.create_review(appointment_id, int(stars), comment, user=user)
+    if error == "Forbidden":
+        return jsonify({"error": error}), 403
+    elif error:
+        return jsonify({"error": error}), 400
+    return jsonify(review), 201
 
 #GET /<appointment_id>
 @appointments_bp.route("/<appointment_id>", methods=["GET"])
