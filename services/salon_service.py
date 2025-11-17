@@ -76,7 +76,7 @@ class SalonService:
         return {"message": "Salon registered successfully", "salon_name": data.name, "salon_id": salon_id,  "verification_status": "pending"}
 
     @staticmethod
-    def add_service_provider(salon_id, provider_id, bio=None, specialties=None, years_experience=None, is_active=True):
+    def add_service_provider(salon_id, provider_id, bio=None, years_experience=None, is_active=True):
         """
         Add a service provider (barber) to a salon.
         """
@@ -87,7 +87,6 @@ class SalonService:
                 "salon_id": salon_id,
                 "user_id": provider_id,
                 "bio": bio,
-                "specialties": specialties,
                 "years_experience": years_experience,
                 "is_active": is_active,
             }).execute()
@@ -166,6 +165,7 @@ class SalonService:
             return response.data, None
         except Exception as e:
             return None, str(e)
+
     @staticmethod
     def get_salon_employees(salon_id):
         """
@@ -177,6 +177,17 @@ class SalonService:
             if not response.data:
                 return {"error":"No employees found for this salon"}
             return response.data
+        except Exception as e:
+            return None, str(e)
+    
+    @staticmethod
+    def get_salon_tags(salon_id):
+        """
+        Get all unique service tags for a salon.
+        """
+        try:
+            tags_response = supabase.table("salon_tags").select("*, tags(name)").eq("salon_id", salon_id).execute()
+            return tags_response.data, None
         except Exception as e:
             return None, str(e)
     #Admin notification format may need to be changed

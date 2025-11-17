@@ -191,10 +191,9 @@ def add_service_provider():
         if not salon_id or not user_id:
             return jsonify({"error": "Missing required fields"}), 400
         bio = json_data.get('bio', '')
-        specialties = json_data.get('specialties', [])
         years_experience = json_data.get('years_experience', 0)
         is_active = json_data.get('is_active', True)
-        result, error = SalonService.add_service_provider(salon_id, user_id, bio, specialties, years_experience, is_active)
+        result, error = SalonService.add_service_provider(salon_id, user_id, bio, years_experience, is_active)
         
         if error:
             return jsonify({"error": error}), 400
@@ -204,6 +203,8 @@ def add_service_provider():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ---------------------------------------3. GET SALON DATA
+# Get all services for a salon
 @salon_bp.route("/<salon_id>/services", methods=["GET"])
 @login_required()
 def get_salon_services(salon_id):
@@ -247,5 +248,19 @@ def get_salon_employees(salon_id):
         if result[0] is None:
             return jsonify({"error": result[1]}), 404
         return jsonify({"employees": result}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@salon_bp.route("/<salon_id>/tags", methods=["GET"])
+@login_required()
+def get_salon_tags(salon_id):
+    """
+    Get all unique service tags for a salon.
+    """
+    try:
+        result, error = SalonService.get_salon_tags(salon_id)
+        if error:
+            return jsonify({"error1": error}), 404
+        return jsonify({"tags": result}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
