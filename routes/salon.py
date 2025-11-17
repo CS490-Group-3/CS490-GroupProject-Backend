@@ -211,7 +211,25 @@ def get_salon_services(salon_id):
     Get all services for a salon.
     """
     try:
-        result = SalonService.get_salon_services(salon_id)
+        """
+        {
+            "search": "haircut",
+            "filters": {
+                "is_active": true, 
+                "price_range": [20, 100],
+                "tags": ["haircut", "shaving"]
+                "duration_range": [30, 60]
+        }   }
+        """
+        try:
+            json_data = request.get_json() or {}
+        except:
+            json_data = {}
+        if not json_data.get("filters"):
+            json_data["filters"] = {}
+        if not json_data.get("search"):
+            json_data["search"] = ""
+        result = SalonService.get_salon_services(salon_id, json_data)
         if result[0] is None:
             return jsonify({"error": result[1]}), 404
         return jsonify({"services": result}), 200

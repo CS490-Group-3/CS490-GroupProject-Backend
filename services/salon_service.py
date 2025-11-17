@@ -125,14 +125,44 @@ class SalonService:
         except Exception as e:
             return None, str(e)
     @staticmethod
-    def get_salon_services(salon_id):
+    def get_salon_services(salon_id, data=None):
         """
         Get all services for a salon.
         """
         try:
-            response = supabase.table("services").select("*").eq("salon_id", salon_id).execute()
-            if not response.data:
-                return {"error":"No services found for this salon"}
+            if data is None:
+                response = supabase.table("services").select("*").eq("salon_id", salon_id).execute()
+                if not response.data:
+                    return {"error":"No services found for this salon"}
+            else:
+                query = supabase.table("services").select("*").eq("salon_id", salon_id)
+
+                # Apply search filter
+                search = data.get("search", "")
+                if search != "":
+                    query = query.ilike("name", f"%{search}%")
+
+                # Apply additional filters
+                filters = data.get("filters", {})
+                if "is_active" in filters:
+                    query = query.eq("is_active", filters.get("is_active"))
+                if "price_range" in filters:
+                    price_min, price_max = filters.get("price_range")
+                    query = query.gte("price", price_min).lte("price", price_max)
+                if "duration_range" in filters:
+                    duration_min, duration_max = filters.get("duration_range")
+                    query = query.gte("duration_minutes", duration_min).lte("duration_minutes", duration_max)
+        
+                response = query.execute()
+                if not response.data:
+                    return {"error":"No services found matching the criteria"}
+                if "tags" in filters:
+                    tags = filters.get("tags", [])
+                    services_with_tags = supabase.table("service_tags").select("service_id").in_("tag_id", tags).execute()
+                    service_ids = {item["service_id"] for item in services_with_tags.data}
+                    filtered_services = [service for service in response.data if service["id"] in service_ids]
+                    return filtered_services
+                
             return response.data, None
         except Exception as e:
             return None, str(e)
