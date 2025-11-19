@@ -10,5 +10,6 @@ from .salon import salon_bp
 from .upload import upload_bp
 from .services import services_bp
 from .admin import admin_bp
-__all__ = ['health_bp', 'auth_bp', 'appointments_bp', 'schedule_bp', 'salon_bp', 'upload_bp', 'services_bp', 'admin_bp']
+from .users import users_bp
+__all__ = ['health_bp', 'auth_bp', 'appointments_bp', 'schedule_bp', 'salon_bp', 'upload_bp', 'services_bp', 'admin_bp', 'users_bp']
 
