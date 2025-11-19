@@ -233,7 +233,12 @@ class AuthService:
         last_name: Optional[str] = None,
         phone: Optional[str] = None,
         profile_image_url: Optional[str] = None,
-        date_of_birth: Optional[str] = None
+        date_of_birth: Optional[str] = None,
+        city: Optional[str] = None,
+        state: Optional[str] = None,
+        age_bracket: Optional[str] = None,
+        gender: Optional[str] = None,
+        preferred_services: Optional[list] = None
     ) -> Tuple[Dict, Optional[str]]:
         """
         Update user profile information.
@@ -245,6 +250,11 @@ class AuthService:
             phone: New phone (optional)
             profile_image_url: New profile image URL (optional)
             date_of_birth: New date of birth (optional)
+            city: User's city (optional)
+            state: User's state or province (optional)
+            age_bracket: User's age bracket (optional)
+            gender: User's gender (optional)
+            preferred_services: List of preferred service IDs or names (optional)
         
         Returns:
             Tuple of (updated_profile, error_message)
@@ -262,6 +272,18 @@ class AuthService:
                 update_data['profile_image_url'] = profile_image_url
             if date_of_birth is not None:
                 update_data['date_of_birth'] = date_of_birth
+            if city is not None:
+                update_data['city'] = city
+            if state is not None:
+                update_data['state'] = state
+            if age_bracket is not None:
+                update_data['age_bracket'] = age_bracket
+            if gender is not None:
+                update_data['gender'] = gender
+            if preferred_services is not None:
+                # Store as JSON array in database
+                import json
+                update_data['preferred_services'] = json.dumps(preferred_services) if isinstance(preferred_services, list) else preferred_services
             
             if not update_data:
                 return None, "No fields to update"
@@ -269,10 +291,18 @@ class AuthService:
             # Add updated timestamp
             update_data['updated_at'] = 'now()'
             
-            response = supabase.table('user_profiles')\
+            # Try user_details table first (based on get_user_profile), fallback to user_profiles
+            response = supabase.table('user_details')\
                 .update(update_data)\
-                .eq('user_id', user_id)\
+                .eq('id', user_id)\
                 .execute()
+            
+            if not response.data:
+                # Fallback to user_profiles table
+                response = supabase.table('user_profiles')\
+                    .update(update_data)\
+                    .eq('user_id', user_id)\
+                    .execute()
             
             if response.data:
                 return response.data[0], None
