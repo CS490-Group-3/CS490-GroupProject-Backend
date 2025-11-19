@@ -179,7 +179,12 @@ def update_profile():
             last_name=data.last_name,
             phone=data.phone,
             profile_image_url=data.profile_image_url,
-            date_of_birth=str(data.date_of_birth) if data.date_of_birth else None
+            date_of_birth=str(data.date_of_birth) if data.date_of_birth else None,
+            city=data.city,
+            state=data.state,
+            age_bracket=data.age_bracket,
+            gender=data.gender,
+            preferred_services=data.preferred_services
         )
         
         if error:

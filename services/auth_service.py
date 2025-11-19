@@ -5,6 +5,7 @@ Handles user signup, login, profile management.
 from config import supabase
 from typing import Dict, Optional, Tuple
 from gotrue.errors import AuthApiError
+import json
 
 class AuthService:
         
@@ -282,7 +283,6 @@ class AuthService:
                 update_data['gender'] = gender
             if preferred_services is not None:
                 # Store as JSON array in database
-                import json
                 update_data['preferred_services'] = json.dumps(preferred_services) if isinstance(preferred_services, list) else preferred_services
             
             if not update_data:
