@@ -31,32 +31,30 @@ parameters:
 responses:
   200:
     description: Demographics retrieved successfully
-    content:
-      application/json:
-        schema:
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Demographics retrieved successfully
+        demographics:
           type: object
           properties:
-            message:
-              type: string
-              example: Demographics retrieved successfully
-            demographics:
+            total_users:
+              type: integer
+              example: 1250
+            by_location:
               type: object
               properties:
-                total_users:
-                  type: integer
-                  example: 1250
-                by_location:
+                cities:
                   type: object
-                  properties:
-                    cities:
-                      type: object
-                      additionalProperties:
-                        type: integer
-                    states:
-                      type: object
-                      additionalProperties:
-                        type: integer
-                  example:
+                  additionalProperties:
+                    type: integer
+                states:
+                  type: object
+                  additionalProperties:
+                type: integer
+              example:
                     cities:
                       "New York": 150
                       "Los Angeles": 120
@@ -65,179 +63,173 @@ responses:
                       CA: 250
                       NY: 180
                       TX: 140
-                by_age_bracket:
-                  type: object
-                  additionalProperties:
-                    type: integer
-                  example:
+            by_age_bracket:
+              type: object
+              additionalProperties:
+                type: integer
+              example:
                     "18-24": 200
                     "25-34": 450
                     "35-44": 350
                     "45-54": 150
                     "55-64": 80
                     "65+": 20
-                by_gender:
-                  type: object
-                  additionalProperties:
-                    type: integer
-                  example:
+            by_gender:
+              type: object
+              additionalProperties:
+                type: integer
+              example:
                     male: 600
                     female: 550
                     "non-binary": 50
                     "prefer-not-to-say": 50
-                by_role:
-                  type: object
-                  additionalProperties:
-                    type: integer
-                  example:
+            by_role:
+              type: object
+              additionalProperties:
+                type: integer
+              example:
                     customer: 1000
                     salon_owner: 150
                     barber: 80
                     admin: 20
-                preferred_services:
-                  type: object
-                  additionalProperties:
-                    type: integer
-                  example:
+            preferred_services:
+              type: object
+              additionalProperties:
+                type: integer
+              example:
                     Haircut: 800
                     "Hair Color": 450
                     "Beard Trim": 300
                     "Hair Styling": 250
-                location_distribution:
-                  type: array
-                  items:
-                    type: object
-                    properties:
+            location_distribution:
+              type: array
+              items:
+                type: object
+                properties:
                       city:
                         type: string
                       count:
                         type: integer
-                state_distribution:
-                  type: array
-                  items:
-                    type: object
-                    properties:
+            state_distribution:
+              type: array
+              items:
+                type: object
+                properties:
                       state:
                         type: string
                       count:
                         type: integer
-                age_distribution:
-                  type: array
-                  items:
-                    type: object
-                    properties:
+            age_distribution:
+              type: array
+              items:
+                type: object
+                properties:
                       age_bracket:
                         type: string
                       count:
                         type: integer
-                gender_distribution:
-                  type: array
-                  items:
-                    type: object
-                    properties:
+            gender_distribution:
+              type: array
+              items:
+                type: object
+                properties:
                       gender:
                         type: string
                       count:
                         type: integer
-                role_distribution:
-                  type: array
-                  items:
-                    type: object
-                    properties:
+            role_distribution:
+              type: array
+              items:
+                type: object
+                properties:
                       role:
                         type: string
                       count:
                         type: integer
-                service_distribution:
-                  type: array
-                  items:
-                    type: object
-                    properties:
+            service_distribution:
+              type: array
+              items:
+                type: object
+                properties:
                       service:
                         type: string
                       count:
                         type: integer
-                top_cities:
-                  type: array
-                  items:
-                    type: object
-                    properties:
+            top_cities:
+              type: array
+              items:
+                type: object
+                properties:
                       city:
                         type: string
                       count:
                         type: integer
-                top_states:
-                  type: array
-                  items:
-                    type: object
-                    properties:
+            top_states:
+              type: array
+              items:
+                type: object
+                properties:
                       state:
                         type: string
                       count:
                         type: integer
-                top_services:
-                  type: array
-                  items:
-                    type: object
-                    properties:
+            top_services:
+              type: array
+              items:
+                type: object
+                properties:
                       service:
                         type: string
                       count:
                         type: integer
-                age_percentages:
-                  type: object
-                  additionalProperties:
-                    type: number
-                  example:
+            age_percentages:
+              type: object
+              additionalProperties:
+                type: number
+              example:
                     "18-24": 16.0
                     "25-34": 36.0
                     "35-44": 28.0
                     "45-54": 12.0
                     "55-64": 6.4
                     "65+": 1.6
-                gender_percentages:
-                  type: object
-                  additionalProperties:
-                    type: number
-                  example:
+            gender_percentages:
+              type: object
+              additionalProperties:
+                type: number
+              example:
                     male: 48.0
                     female: 44.0
                     "non-binary": 4.0
                     "prefer-not-to-say": 4.0
   403:
     description: Forbidden - Admin role required
-    content:
-      application/json:
-        schema:
-          type: object
-          properties:
-            error:
-              type: string
-              example: Forbidden
-            message:
-              type: string
-              example: This endpoint requires one of the following roles: admin
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Forbidden
+        message:
+          type: string
+          example: "This endpoint requires one of the following roles: admin"
   401:
     description: Unauthorized - Authentication required
-    content:
-      application/json:
-        schema:
-          type: object
-          properties:
-            error:
-              type: string
-              example: Unauthorized
-            message:
-              type: string
-              example: Authentication required
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Unauthorized
+        message:
+          type: string
+          example: Authentication required
   500:
     description: Internal server error
-    content:
-      application/json:
-        schema:
-          type: object
-          properties:
-            error:
-              type: string
-              example: Failed to aggregate demographics
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Failed to aggregate demographics
 
