@@ -185,15 +185,20 @@ class SalonService:
         Search by email for service providers (barbers) to add to a salon.
         """
         try:
-            response = supabase.table("user_details").select("*").ilike("email", f"%{query_str}%").eq("role", "barber").execute()
+            response= supabase.table("user_details").select("id,email,first_name,last_name").ilike("email", f"%{query_str}%").eq("role", "barber").execute()
             if not response.data:
-                return {"error":"No service providers found matching the search criteria"}
+                return None, "No service providers found matching the search criteria"
+            
+            print("Search response data:", response.data)
+            
             user_ids= [item["id"] for item in response.data]
-            barber_response = supabase.table("barbers").select("user_id, is_active").in_("user_id", user_ids).eq("is_active", True).execute()
-            return barber_response.data
+            barber_response= supabase.table("barbers").select("user_id").in_("user_id", user_ids).eq("is_active", True).execute()
             
+            active_user_ids = {item["user_id"] for item in barber_response.data}
+            user_ids = [uid for uid in response.data if uid["id"] not in active_user_ids]
+            print("Found user IDs:", user_ids)
+            return user_ids, None
             
-
         except Exception as e:
             return None, str(e)
     @staticmethod

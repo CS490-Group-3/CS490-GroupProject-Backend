@@ -237,21 +237,22 @@ def get_salon_tags(salon_id):
 @salon_bp.route("/provider/search", methods=["GET"])
 @login_required()
 @role_required(['admin', 'salon_owner'])
-
 def search_for_employee():
     """
     Search for service providers (barbers) to add to a salon by email.
+    /provider/search?email=whatever
     """
     try:
         query = request.args.get("email", "")
         if not query:
             return jsonify({"error": "Missing search query parameter 'email'"}), 400
-        result, error = SalonService.search_service_providers(query)
+        print("Searching for providers with email containing:", query)
+        result, error = SalonService.salon_owner_employee_search(query)
         if error:
             return jsonify({"error": error}), 404
         return jsonify({"providers": result}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error3": str(e)}), 500
 
 # Add service provider to salon
 @salon_bp.route("/provider", methods=["POST"])
