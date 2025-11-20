@@ -32,6 +32,15 @@ class AuthService:
             Tuple of (user_data, error_message)
         """
         try:
+            # Check if email already exists in user_details table
+            existing_user = supabase.table('user_details')\
+                .select('id, email')\
+                .eq('email', email)\
+                .execute()
+            
+            if existing_user.data and len(existing_user.data) > 0:
+                return None, "Email already registered. Please use a different email or try logging in."
+            
             # Sign up user with Supabase Auth
             response = supabase.auth.sign_up({
                 "email": email,
@@ -58,6 +67,10 @@ class AuthService:
                 return None, "Failed to create user"
                 
         except AuthApiError as e:
+            # Check if error is due to duplicate email
+            error_message = str(e).lower()
+            if 'email' in error_message and ('already' in error_message or 'exists' in error_message or 'registered' in error_message):
+                return None, "Email already registered. Please use a different email or try logging in."
             return None, str(e)
         except Exception as e:
             return None, f"Unexpected error: {str(e)}"

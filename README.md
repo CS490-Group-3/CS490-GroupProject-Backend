@@ -62,9 +62,9 @@ Then fill in the real values. Example content from `.env.example`:
 
 ```env
 # Supabase Configuration
-SUPABASE_URL=https://saahafpvorplqdgqmvsf.supabase.co/
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhYWhhZnB2b3JwbHFkZ3FtdnNmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1MDAyNTIsImV4cCI6MjA3NTA3NjI1Mn0.CQ4S4vymDzHQ6v5JdXj3RzUzkezXHCm78ih1yEOI35w
-SUPABASE_JWT_SECRET=JRuGP+0bstpmPVjFDAUzWdHBO3QnGau5LlSHfKVeSHHUQs1g8jtoKZNgL7Z2Hp0Zwk8dZe0KMdvwfKKGqLt8gQ==
+SUPABASE_URL=...
+SUPABASE_KEY=...
+SUPABASE_JWT_SECRET=...
 
 # Flask Configuration
 FLASK_ENV=development
