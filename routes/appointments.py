@@ -215,6 +215,13 @@ def reschedule_appointment(appointment_id):
 @appointments_bp.route("/<appointment_id>/action", methods=["PATCH"])
 @login_required()
 @role_required(["salon_owner", "barber", "admin"])
+@notify(
+    ["user"],
+    event_type="General",
+    title="Appointment status Updated",
+    message_template="Your appointment has been updated",
+    related_key="appointment_id",
+)
 @swag_from("../docs/confirm_or_deny.yml")
 def confirm_or_deny(appointment_id):
     """
@@ -271,40 +278,4 @@ def get_appointment(appointment_id):
         return jsonify({"error": str(e)}), 500
 
 
-@appointments_bp.route('/<appointment_id>/approve', methods=['PATCH'])
-@login_required()
-@role_required(['barber'])
-@notify(
-    ["user"],
-    event_type="appointment_confirmation",
-    title="Appointment Approved",
-    message_template="Your appointment has been approved by your barber.",
-    related_key="appointment_id",
-)
-def approve_appointment(appointment_id):
-    user = get_current_user()
-    user_id = user.get("sub")
-    result, error = AppointmentService.approve_appointment(appointment_id,user_id)
-    if error:
-        return jsonify({"error": error}), 400
-    return jsonify({"message": "Appointment approved."}), 200
-
-
-@appointments_bp.route('/<appointment_id>/deny', methods=['PATCH'])
-@login_required()
-@role_required(['barber'])
-@notify(
-    ["user"],
-    event_type="appointment_cancellation",
-    title="Appointment Denied",
-    message_template="Your appointment was declined by your barber.",
-    related_key="appointment_id",
-)
-def deny_appointment(appointment_id):
-    user = get_current_user()
-    user_id = user.get("sub")
-    result, error = AppointmentService.deny_appointment(appointment_id, user_id)
-    if error:
-        return jsonify({"error": error}), 400
-    return jsonify({"message": "Appointment denied."}), 200
 
