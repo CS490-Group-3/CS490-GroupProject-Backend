@@ -1,0 +1,130 @@
+---
+tags:
+  - Salons
+summary: Get customer history at a salon
+description: >
+  Returns complete visit history for a specific customer at a specific salon.
+  Available to salon owners, barbers, and admins.
+  Aggregates appointments, total spend, loyalty transactions, uploaded images, and notes.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+    example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  - in: path
+    name: salon_id
+    type: string
+    required: true
+    description: The unique ID of the salon
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+  - in: path
+    name: customer_id
+    type: string
+    required: true
+    description: The unique ID of the customer
+    example: "123e4567-e89b-12d3-a456-426614174000"
+responses:
+  200:
+    description: Customer history retrieved successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Customer history retrieved successfully"
+        history:
+          type: object
+          properties:
+            customer_id:
+              type: string
+              example: "123e4567-e89b-12d3-a456-426614174000"
+            salon_id:
+              type: string
+              example: "b534633a-23bc-4479-968f-8a004615821c"
+            salon:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+            statistics:
+              type: object
+              properties:
+                total_visits:
+                  type: integer
+                  example: 15
+                total_appointments:
+                  type: integer
+                  example: 20
+                total_spend:
+                  type: number
+                  example: 450.00
+                loyalty_points:
+                  type: integer
+                  example: 120
+                total_images:
+                  type: integer
+                  example: 5
+                appointments_by_status:
+                  type: object
+                  additionalProperties:
+                    type: integer
+            appointments:
+              type: array
+              items:
+                type: object
+            completed_appointments:
+              type: array
+              items:
+                type: object
+            images:
+              type: array
+              items:
+                type: object
+            loyalty_transactions:
+              type: array
+              items:
+                type: object
+            timeline:
+              type: array
+              description: Chronological timeline of all visits, images, and transactions
+              items:
+                type: object
+            total_spend:
+              type: number
+              example: 450.00
+            loyalty_points:
+              type: integer
+              example: 120
+  403:
+    description: Forbidden - Insufficient permissions
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Forbidden: You don't own this salon"
+  401:
+    description: Unauthorized - Invalid or missing token
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unauthorized"
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Failed to get salon customer history"
+

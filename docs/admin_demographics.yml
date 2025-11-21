@@ -1,0 +1,235 @@
+tags:
+  - Admin
+summary: Get aggregated user demographics
+description: |
+  Retrieve aggregated demographic data for all users. This endpoint provides
+  comprehensive statistics for visualization and segmentation analysis.
+  Requires admin role.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+    example: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+  - in: query
+    name: segment
+    required: false
+    schema:
+      type: string
+      enum: [city, state, age_bracket, gender, role]
+    description: Optional segment filter type
+    example: city
+  - in: query
+    name: value
+    required: false
+    schema:
+      type: string
+    description: Value for the segment filter
+    example: New York
+responses:
+  200:
+    description: Demographics retrieved successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Demographics retrieved successfully
+        demographics:
+          type: object
+          properties:
+            total_users:
+              type: integer
+              example: 1250
+            by_location:
+              type: object
+              properties:
+                cities:
+                  type: object
+                  additionalProperties:
+                    type: integer
+                states:
+                  type: object
+                  additionalProperties:
+                type: integer
+              example:
+                    cities:
+                      "New York": 150
+                      "Los Angeles": 120
+                      "Chicago": 95
+                    states:
+                      CA: 250
+                      NY: 180
+                      TX: 140
+            by_age_bracket:
+              type: object
+              additionalProperties:
+                type: integer
+              example:
+                    "18-24": 200
+                    "25-34": 450
+                    "35-44": 350
+                    "45-54": 150
+                    "55-64": 80
+                    "65+": 20
+            by_gender:
+              type: object
+              additionalProperties:
+                type: integer
+              example:
+                    male: 600
+                    female: 550
+                    "non-binary": 50
+                    "prefer-not-to-say": 50
+            by_role:
+              type: object
+              additionalProperties:
+                type: integer
+              example:
+                    customer: 1000
+                    salon_owner: 150
+                    barber: 80
+                    admin: 20
+            preferred_services:
+              type: object
+              additionalProperties:
+                type: integer
+              example:
+                    Haircut: 800
+                    "Hair Color": 450
+                    "Beard Trim": 300
+                    "Hair Styling": 250
+            location_distribution:
+              type: array
+              items:
+                type: object
+                properties:
+                      city:
+                        type: string
+                      count:
+                        type: integer
+            state_distribution:
+              type: array
+              items:
+                type: object
+                properties:
+                      state:
+                        type: string
+                      count:
+                        type: integer
+            age_distribution:
+              type: array
+              items:
+                type: object
+                properties:
+                      age_bracket:
+                        type: string
+                      count:
+                        type: integer
+            gender_distribution:
+              type: array
+              items:
+                type: object
+                properties:
+                      gender:
+                        type: string
+                      count:
+                        type: integer
+            role_distribution:
+              type: array
+              items:
+                type: object
+                properties:
+                      role:
+                        type: string
+                      count:
+                        type: integer
+            service_distribution:
+              type: array
+              items:
+                type: object
+                properties:
+                      service:
+                        type: string
+                      count:
+                        type: integer
+            top_cities:
+              type: array
+              items:
+                type: object
+                properties:
+                      city:
+                        type: string
+                      count:
+                        type: integer
+            top_states:
+              type: array
+              items:
+                type: object
+                properties:
+                      state:
+                        type: string
+                      count:
+                        type: integer
+            top_services:
+              type: array
+              items:
+                type: object
+                properties:
+                      service:
+                        type: string
+                      count:
+                        type: integer
+            age_percentages:
+              type: object
+              additionalProperties:
+                type: number
+              example:
+                    "18-24": 16.0
+                    "25-34": 36.0
+                    "35-44": 28.0
+                    "45-54": 12.0
+                    "55-64": 6.4
+                    "65+": 1.6
+            gender_percentages:
+              type: object
+              additionalProperties:
+                type: number
+              example:
+                    male: 48.0
+                    female: 44.0
+                    "non-binary": 4.0
+                    "prefer-not-to-say": 4.0
+  403:
+    description: Forbidden - Admin role required
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Forbidden
+        message:
+          type: string
+          example: "This endpoint requires one of the following roles: admin"
+  401:
+    description: Unauthorized - Authentication required
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Unauthorized
+        message:
+          type: string
+          example: Authentication required
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Failed to aggregate demographics
+

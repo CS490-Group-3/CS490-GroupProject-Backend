@@ -1,21 +1,70 @@
 from flask import Blueprint, request, jsonify, g, json
 from pydantic import ValidationError
-from middleware.auth import login_required, role_required
+from middleware.auth import login_required, role_required, get_current_user
 from middleware.notify import notify
 from models.salon import SalonRegisterRequest
 from services.salon_service import SalonService
 from services.promotion_service import PromotionService
+from services.visit_history_service import VisitHistoryService
+from config import supabase
 from flasgger.utils import swag_from
 
 salon_bp = Blueprint("salon_bp", __name__, url_prefix="/api/salons")
+salon_bp.strict_slashes = False
 
+@salon_bp.route("", methods=["GET"], strict_slashes=False)
+@salon_bp.route("/", methods=["GET"], strict_slashes=False)
+@login_required()
+def list_salons():
+    """
+    Public list of verified salons with optional filters.
+    """
+    try:
+        services_param = request.args.get("services")
+        service_filters = services_param.split(",") if services_param else []
+        data, error = SalonService.list_salons(
+            search=request.args.get("q"),
+            location=request.args.get("location"),
+            service_names=service_filters,
+            sort=request.args.get("sort", "top"),
+        )
+        if error:
+            return jsonify({"error": error}), 400
+        return jsonify({"salons": data}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@salon_bp.route("/<salon_id>", methods=["GET"], strict_slashes=False)
+@login_required()
+def get_salon_detail(salon_id):
+    """
+    Detailed info for a single salon.
+    """
+    data, error = SalonService.get_salon_detail(salon_id)
+    if error:
+        return jsonify({"error": error}), 404
+    return jsonify(data), 200
+
+
+@salon_bp.route("/<salon_id>/reviews", methods=["GET"], strict_slashes=False)
+@login_required()
+def get_salon_reviews(salon_id):
+    try:
+        limit = int(request.args.get("limit", 6))
+        data, error = SalonService.list_reviews(salon_id, limit=limit)
+        if error:
+            return jsonify({"error": error}), 400
+        return jsonify({"reviews": data}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 #-----------------------------------1. SALONS (salon owners) 
 
 # Salon registration (requires user auth)
 #@role_required(['salon_owner'])
-@salon_bp.route("/apply", methods=["POST"])
+@salon_bp.route("/apply", methods=["POST"], strict_slashes=False)
 @login_required()
 @notify(["admins"],event_type="salon_verification",title="New Salon Application",
 message_template="New salon application by {salon_name} submitted.")
@@ -63,7 +112,7 @@ def register_salon():
 
 # Salon owner appeals
 #@role_required(['salon_owner'])
-@salon_bp.route("/<salon_id>/appeal", methods=["PUT"])
+@salon_bp.route("/<salon_id>/appeal", methods=["PUT"], strict_slashes=False)
 @login_required()
 @notify(["admins"],event_type="salon_verification",title="Salon Appeal submitted",
 message_template="New salon appeal by {salon_name} submitted.")
@@ -124,7 +173,7 @@ def create_promotional_offer(salon_id):
 #----------------------------------------2. ADMIN
 
 # Admin approval (requires admin)
-@salon_bp.route("/<salon_id>/approve", methods=["PATCH"])
+@salon_bp.route("/<salon_id>/approve", methods=["PATCH"], strict_slashes=False)
 @login_required()
 @role_required(['admin'])
 @notify(["salon_owner"],event_type="salon_verification",title="Salon Approved",
@@ -141,7 +190,7 @@ def approve_salon(salon_id):
 
 
 # Admin rejection
-@salon_bp.route("/<salon_id>/reject", methods=["PATCH"])
+@salon_bp.route("/<salon_id>/reject", methods=["PATCH"], strict_slashes=False)
 @login_required()
 @role_required(['admin'])
 @notify(["salon_owner"],event_type="salon_verification",title="Salon Denied",
@@ -161,7 +210,7 @@ def reject_salon(salon_id):
 
 
 #view pending applications
-@salon_bp.route("/pending", methods=["GET"])
+@salon_bp.route("/pending", methods=["GET"], strict_slashes=False)
 @role_required(['admin'])
 @swag_from("../docs/salon_pending.yml")
 def get_pending_salons_route():
@@ -181,7 +230,7 @@ def get_pending_salons_route():
 
 
 #get a salons verification history
-@salon_bp.route("/<uuid:salon_id>/status-history", methods=["GET"])
+@salon_bp.route("/<uuid:salon_id>/status-history", methods=["GET"], strict_slashes=False)
 @login_required()
 @role_required(['admin'])
 @swag_from("../docs/salon_status_history.yml")
@@ -191,6 +240,141 @@ def get_salon_status_history(salon_id):
         return jsonify(result), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ---------------------------------------3. GET SALON DATA
+# Get all services for a salon
+@salon_bp.route("/<salon_id>/services", methods=["GET"], strict_slashes=False)
+@login_required()
+def get_salon_services(salon_id):
+    """
+    Get all services for a salon.
+    """
+    try:
+        """
+        {
+            "search": "haircut",
+            "filters": {
+                "is_active": true, 
+                "price_range": [20, 100],
+                "tags": ["haircut", "shaving"]
+                "duration_range": [30, 60]
+        }   }
+        """
+        try:
+            json_data = request.get_json() or {}
+        except:
+            json_data = {}
+        if not json_data.get("filters"):
+            json_data["filters"] = {}
+        if not json_data.get("search"):
+            json_data["search"] = ""
+        result = SalonService.get_salon_services(salon_id, json_data)
+        if result[0] is None:
+            return jsonify({"error": result[1]}), 404
+        return jsonify({"services": result}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@salon_bp.route("/<salon_id>/employees", methods=["GET"], strict_slashes=False)
+@login_required()
+def get_salon_employees(salon_id):
+    """
+    Get all service providers (barbers) for a salon.
+    """
+    try:
+        employees, error = SalonService.get_salon_employees(salon_id)
+        if error:
+            return jsonify({"error": error}), 404
+        return jsonify({"employees": employees}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@salon_bp.route("/<salon_id>/tags", methods=["GET"], strict_slashes=False)
+@login_required()
+def get_salon_tags(salon_id):
+    """
+    Get all unique service tags for a salon.
+    """
+    try:
+        result, error = SalonService.get_salon_tags(salon_id)
+        if error:
+            return jsonify({"error1": error}), 404
+        return jsonify({"tags": result}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@salon_bp.route("/<salon_id>/customers/<customer_id>/history", methods=["GET"])
+@login_required()
+@role_required(['salon_owner', 'barber', 'admin'], verify_with_supabase=True)
+@swag_from("../docs/salon_customer_history.yml")
+def get_salon_customer_history(salon_id: str, customer_id: str):
+    """
+    Get customer visit history at a specific salon.
+    Available to salon owners, barbers, and admins.
+    Returns aggregated appointments, spend, images, and notes for the customer at this salon.
+    """
+    try:
+        user = get_current_user()
+        user_role = user.get('role')
+        user_id = user.get('sub') or user.get('id')
+        
+        # Verify salon ownership/access for salon_owner and barber
+        if user_role == 'salon_owner':
+            from middleware.appointments import get_owned_salons
+            salons = get_owned_salons()
+            owned_salon_ids = [s['id'] for s in salons] if salons else []
+            if salon_id not in owned_salon_ids:
+                return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+        elif user_role == 'barber':
+            # Verify barber belongs to this salon
+            from services.auth_service import AuthService
+            barber_id, _ = AuthService.get_barber_id(user_id)
+            if barber_id:
+                barber_response = supabase.table('barbers')\
+                    .select('salon_id')\
+                    .eq('id', barber_id)\
+                    .single()\
+                    .execute()
+                if barber_response.data and str(barber_response.data.get('salon_id')) != str(salon_id):
+                    return jsonify({"error": "Forbidden: You don't work at this salon"}), 403
+        
+        # Get customer history at this salon
+        history, error = VisitHistoryService.get_salon_customer_history(
+            salon_id=salon_id,
+            customer_id=customer_id
+        )
+        
+        if error:
+            return jsonify({"error": error}), 500
+        
+        return jsonify({
+            "message": "Customer history retrieved successfully",
+            "history": history
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+#---------------------------------------4. SALON EMPLOYEES (service providers/barbers)
+
+# Search 'barbers' to be added to salon
+@salon_bp.route("/provider/search", methods=["GET"])
+@login_required()
+@role_required(['admin', 'salon_owner'])
+def search_for_employee():
+    """
+    Search for service providers (barbers) to add to a salon by email.
+    /provider/search?email=whatever
+    """
+    try:
+        query = request.args.get("email", "")
+        if not query:
+            return jsonify({"error": "Missing search query parameter 'email'"}), 400
+        print("Searching for providers with email containing:", query)
+        result, error = SalonService.salon_owner_employee_search(query)
+        if error:
+            return jsonify({"error": error}), 404
+        return jsonify({"providers": result}), 200
+    except Exception as e:
+        return jsonify({"error3": str(e)}), 500
 
 # Add service provider to salon
 @salon_bp.route("/provider", methods=["POST"])

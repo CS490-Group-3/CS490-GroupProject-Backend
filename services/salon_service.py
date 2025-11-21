@@ -17,6 +17,36 @@ class SalonService:
         except Exception:
             return DEFAULT_TZ
 
+    @staticmethod
+    def _format_price(value):
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _full_address(row):
+        parts = [
+            row.get("address"),
+            row.get("city"),
+            row.get("state"),
+            row.get("zip_code"),
+        ]
+        return ", ".join([p for p in parts if p])
+
+    @staticmethod
+    def _serialize_service(row):
+        return {
+            "id": row.get("id"),
+            "name": row.get("name"),
+            "description": row.get("description"),
+            "duration_minutes": row.get("duration_minutes"),
+            "price": SalonService._format_price(row.get("price")),
+            "is_active": row.get("is_active", True),
+        }
+
     #------------------------------------1. SALONS
     """registration and appeals made by salon owners """
     @staticmethod
@@ -76,12 +106,215 @@ class SalonService:
         return {"message": "Salon registered successfully", "salon_name": data.name, "salon_id": salon_id,  "verification_status": "pending"}
 
     @staticmethod
+    def list_salons(search=None, location=None, service_names=None, sort="top"):
+        """
+        Return verified salons with optional filters.
+        """
+        try:
+            response = (
+                supabase.table("salons")
+                .select("*")
+                .eq("status", "verified")
+                .order("created_at", desc=False)
+                .execute()
+            )
+            salons = response.data or []
+            search_lc = (search or "").strip().lower()
+            location_lc = (location or "").strip().lower()
+            service_filters = [s.strip().lower() for s in (service_names or []) if s.strip()]
+
+            if search_lc:
+                salons = [
+                    row for row in salons
+                    if search_lc in (row.get("name") or "").lower()
+                    or search_lc in (row.get("description") or "").lower()
+                    or search_lc in SalonService._full_address(row).lower()
+                ]
+
+            if location_lc:
+                salons = [
+                    row for row in salons
+                    if location_lc in (row.get("city") or "").lower()
+                    or location_lc in (row.get("state") or "").lower()
+                    or location_lc in (row.get("zip_code") or "").lower()
+                    or location_lc in (row.get("address") or "").lower()
+                ]
+
+            salon_ids = [row["id"] for row in salons if row.get("id")]
+            services_map = {}
+            if salon_ids:
+                svc_resp = (
+                    supabase.table("services")
+                    .select("id,name,salon_id,duration_minutes,price")
+                    .in_("salon_id", salon_ids)
+                    .execute()
+                )
+                for svc in svc_resp.data or []:
+                    services_map.setdefault(svc["salon_id"], []).append(SalonService._serialize_service(svc))
+
+            if service_filters:
+                salons = [
+                    row for row in salons
+                    if all(
+                        any((svc.get("name") or "").lower() == target for svc in services_map.get(row["id"], []))
+                        for target in service_filters
+                    )
+                ]
+
+            rating_map = {}
+            if salon_ids:
+                rev_resp = (
+                    supabase.table("reviews")
+                    .select("salon_id,rating")
+                    .in_("salon_id", salon_ids)
+                    .execute()
+                )
+                for rev in rev_resp.data or []:
+                    sid = rev["salon_id"]
+                    entry = rating_map.setdefault(sid, {"sum": 0, "count": 0})
+                    entry["sum"] += rev.get("rating") or 0
+                    entry["count"] += 1
+
+            results = []
+            for row in salons:
+                rid = row["id"]
+                rating = rating_map.get(rid, {"sum": 0, "count": 0})
+                avg = (rating["sum"] / rating["count"]) if rating["count"] else None
+                services = services_map.get(rid, [])
+                results.append({
+                    "id": rid,
+                    "name": row.get("name"),
+                    "created_at": row.get("created_at"),
+                    "description": row.get("description"),
+                    "address": SalonService._full_address(row),
+                    "city": row.get("city"),
+                    "state": row.get("state"),
+                    "zip_code": row.get("zip_code"),
+                    "phone": row.get("phone"),
+                    "email": row.get("email"),
+                    "rating": round(avg, 1) if avg is not None else None,
+                    "reviews_count": rating["count"],
+                    "logo_url": row.get("logo_url"),
+                    "services": services[:4],
+                })
+
+            if sort == "top":
+                results.sort(key=lambda x: x.get("rating") or 0, reverse=True)
+            elif sort == "recent":
+                results.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+
+            return results, None
+        except Exception as e:
+            return None, str(e)
+
+    @staticmethod
+    def get_salon_detail(salon_id):
+        """
+        Fetch a single salon with services, team, hours, and rating summary.
+        """
+        try:
+            salon_resp = (
+                supabase.table("salons")
+                .select("*")
+                .eq("id", salon_id)
+                .single()
+                .execute()
+            )
+            salon = salon_resp.data
+            if not salon:
+                return None, "Salon not found"
+
+            services, _ = SalonService.get_salon_services(salon_id)
+            employees, _ = SalonService.get_salon_employees(salon_id)
+
+            hours_resp = (
+                supabase.table("salon_hours")
+                .select("day_of_week,open_time,close_time,is_closed")
+                .eq("salon_id", salon_id)
+                .order("day_of_week", desc=False)
+                .execute()
+            )
+            hours = hours_resp.data or []
+
+            reviews_resp = (
+                supabase.table("reviews")
+                .select("rating")
+                .eq("salon_id", salon_id)
+                .execute()
+            )
+            ratings = reviews_resp.data or []
+            count = len(ratings)
+            avg = round(sum(r.get("rating") or 0 for r in ratings) / count, 1) if count else None
+
+            return {
+                "id": salon.get("id"),
+                "name": salon.get("name"),
+                "description": salon.get("description"),
+                "address": SalonService._full_address(salon),
+                "city": salon.get("city"),
+                "state": salon.get("state"),
+                "zip_code": salon.get("zip_code"),
+                "phone": salon.get("phone"),
+                "email": salon.get("email"),
+                "logo_url": salon.get("logo_url"),
+                "status": salon.get("status"),
+                "services": services or [],
+                "employees": employees or [],
+                "hours": hours,
+                "rating": avg,
+                "reviews_count": count,
+                "gallery": [],
+            }, None
+        except Exception as e:
+            return None, str(e)
+
+    @staticmethod
+    def list_reviews(salon_id, limit=6):
+        """
+        Return latest reviews for a salon.
+        """
+        try:
+            response = (
+                supabase.table("reviews")
+                .select("id,salon_id,user_id,appointment_id,rating,comment,created_at")
+                .eq("salon_id", salon_id)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            reviews = response.data or []
+            user_ids = [row["user_id"] for row in reviews if row.get("user_id")]
+            profiles = {}
+            if user_ids:
+                prof = (
+                    supabase.table("user_details")
+                    .select("id,first_name,last_name")
+                    .in_("id", user_ids)
+                    .execute()
+                )
+                profiles = {row["id"]: row for row in (prof.data or [])}
+
+            output = []
+            for row in reviews:
+                profile = profiles.get(row.get("user_id"), {})
+                output.append({
+                    "id": row.get("id"),
+                    "stars": row.get("rating"),
+                    "text": row.get("comment"),
+                    "created_at": row.get("created_at"),
+                    "user": {
+                        "name": f"{profile.get('first_name','')} {profile.get('last_name','')}".strip() or "Guest"
+                    }
+                })
+            return output, None
+        except Exception as e:
+            return None, str(e)
+
+    @staticmethod
     def add_service_provider(salon_id, provider_id, bio=None, years_experience=None, is_active=True):
         """
         Add a service provider (barber) to a salon.
         """
-        specialties = specialties or []
-
         try:
             supabase.table("barbers").insert({
                 "salon_id": salon_id,
@@ -172,14 +405,77 @@ class SalonService:
         Get all service providers (barbers) for a salon.
         """
         try:
-            #matches salon_id in barbers table to get user details from user_profiles
-            response = supabase.table("barbers").select("*, user_details(*)").eq("salon_id", salon_id).execute()
-            if not response.data:
-                return {"error":"No employees found for this salon"}
-            return response.data
+            response = (
+                supabase.table("barbers")
+                .select("id,user_id,bio,years_experience,is_active")
+                .eq("salon_id", salon_id)
+                .execute()
+            )
+            rows = response.data or []
+            user_ids = [row["user_id"] for row in rows if row.get("user_id")]
+            profiles = {}
+            if user_ids:
+                try:
+                    prof_res = (
+                        supabase.table("user_profiles")
+                        .select("user_id,first_name,last_name,profile_image_url")
+                        .in_("user_id", user_ids)
+                        .execute()
+                    )
+                    profiles = {row["user_id"]: row for row in (prof_res.data or [])}
+                except Exception:
+                    alt = (
+                        supabase.table("user_details")
+                        .select("id,first_name,last_name,profile_image_url")
+                        .in_("id", user_ids)
+                        .execute()
+                    )
+                    profiles = {
+                        row["id"]: {
+                            "first_name": row.get("first_name"),
+                            "last_name": row.get("last_name"),
+                            "profile_image_url": row.get("profile_image_url"),
+                        }
+                        for row in (alt.data or [])
+                    }
+
+            employees = []
+            for row in rows:
+                profile = profiles.get(row.get("user_id"), {})
+                employees.append({
+                    "id": row.get("id"),
+                    "user_id": row.get("user_id"),
+                    "name": f"{profile.get('first_name','')} {profile.get('last_name','')}".strip() or "Team member",
+                    "bio": row.get("bio"),
+                    "years_experience": row.get("years_experience"),
+                    "is_active": row.get("is_active", True),
+                    "avatar": profile.get("profile_image_url"),
+                })
+            return employees, None
         except Exception as e:
             return None, str(e)
-    
+    @staticmethod
+    def salon_owner_employee_search(query_str):
+        """
+        Search by email for service providers (barbers) to add to a salon.
+        """
+        try:
+            response= supabase.table("user_details").select("id,email,first_name,last_name").ilike("email", f"%{query_str}%").eq("role", "barber").execute()
+            if not response.data:
+                return None, "No service providers found matching the search criteria"
+            
+            print("Search response data:", response.data)
+            
+            user_ids= [item["id"] for item in response.data]
+            barber_response= supabase.table("barbers").select("user_id").in_("user_id", user_ids).eq("is_active", True).execute()
+            
+            active_user_ids = {item["user_id"] for item in barber_response.data}
+            user_ids = [uid for uid in response.data if uid["id"] not in active_user_ids]
+            print("Found user IDs:", user_ids)
+            return user_ids, None
+            
+        except Exception as e:
+            return None, str(e)
     @staticmethod
     def get_salon_tags(salon_id):
         """

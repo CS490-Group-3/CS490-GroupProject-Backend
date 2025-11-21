@@ -1,6 +1,6 @@
 from config import supabase
 from typing import Dict, Optional, List, Tuple
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, time
 from zoneinfo import ZoneInfo
 from services.auth_service import AuthService
 
@@ -84,7 +84,7 @@ class AppointmentService:
             .select("id")
             .eq("salon_id", salon_id)
             .eq("barber_id", barber_id)
-            .in_("status", ["scheduled", "rescheduled"])
+            .in_("status", ["scheduled", "confirmed"])
             .lt("start_at", end_at)
             .gt("end_at", start_at)
         )
@@ -106,7 +106,7 @@ class AppointmentService:
     @staticmethod
     def _can_manage(user, appt) -> bool:
         role = user.get("role")
-        uid  = user.get("id")
+        uid  = user.get("sub")
         if role == "admin":
             return True
         if role == "customer":
@@ -119,6 +119,153 @@ class AppointmentService:
             owned = {s["id"] for s in (salons.data or [])}
             return appt["salon_id"] in owned
         return False
+
+    @staticmethod
+    def _hydrate_appointments(rows: List[dict]) -> List[dict]:
+        if not rows:
+            return []
+
+        salon_ids = {row["salon_id"] for row in rows if row.get("salon_id")}
+        service_ids = {row["service_id"] for row in rows if row.get("service_id")}
+        barber_ids = {row["barber_id"] for row in rows if row.get("barber_id")}
+        customer_ids = {row["customer_id"] for row in rows if row.get("customer_id")}
+        appointment_ids = [row["id"] for row in rows if row.get("id")]
+
+        salons = {}
+        if salon_ids:
+            resp = (
+                supabase.table("salons")
+                .select("id,name,address,city,state,zip_code,phone,logo_url")
+                .in_("id", list(salon_ids))
+                .execute()
+            )
+            for row in resp.data or []:
+                salons[row["id"]] = {
+                    "id": row.get("id"),
+                    "name": row.get("name"),
+                    "address": f"{row.get('address','')}, {row.get('city','')}, {row.get('state','')} {row.get('zip_code','')}".replace(" ,", ",").strip(" ,"),
+                    "phone": row.get("phone"),
+                    "logo_url": row.get("logo_url"),
+                }
+
+        services = {}
+        if service_ids:
+            resp = (
+                supabase.table("services")
+                .select("id,name,duration_minutes,price,description")
+                .in_("id", list(service_ids))
+                .execute()
+            )
+            for row in resp.data or []:
+                price = row.get("price")
+                try:
+                    price = float(price) if price is not None else None
+                except Exception:
+                    price = None
+                services[row["id"]] = {
+                    "id": row.get("id"),
+                    "name": row.get("name"),
+                    "duration_minutes": row.get("duration_minutes"),
+                    "price": price,
+                    "description": row.get("description"),
+                }
+
+        barbers = {}
+        if barber_ids:
+            resp = (
+                supabase.table("barbers")
+                .select("id,user_id,bio,years_experience")
+                .in_("id", list(barber_ids))
+                .execute()
+            )
+            barbers_rows = resp.data or []
+            user_ids = [row["user_id"] for row in barbers_rows if row.get("user_id")]
+            profiles = {}
+            if user_ids:
+                try:
+                    prof = (
+                        supabase.table("user_profiles")
+                        .select("user_id,first_name,last_name,profile_image_url")
+                        .in_("user_id", user_ids)
+                        .execute()
+                    )
+                    profiles = {row["user_id"]: row for row in (prof.data or [])}
+                except Exception:
+                    alt = (
+                        supabase.table("user_details")
+                        .select("id,first_name,last_name,profile_image_url")
+                        .in_("id", user_ids)
+                        .execute()
+                    )
+                    profiles = {
+                        row["id"]: {
+                            "first_name": row.get("first_name"),
+                            "last_name": row.get("last_name"),
+                            "profile_image_url": row.get("profile_image_url"),
+                        }
+                        for row in (alt.data or [])
+                    }
+            for row in barbers_rows:
+                profile = profiles.get(row.get("user_id"), {})
+                barbers[row["id"]] = {
+                    "id": row.get("id"),
+                    "user_id": row.get("user_id"),
+                    "name": f"{profile.get('first_name','')} {profile.get('last_name','')}".strip() or "Team member",
+                    "avatar": profile.get("profile_image_url"),
+                    "years_experience": row.get("years_experience"),
+                    "bio": row.get("bio"),
+                }
+
+        reviews_map = {}
+        if appointment_ids:
+            rev_resp = (
+                supabase.table("reviews")
+                .select("appointment_id,rating,comment,id")
+                .in_("appointment_id", appointment_ids)
+                .execute()
+            )
+            for row in rev_resp.data or []:
+                reviews_map[row["appointment_id"]] = {
+                    "id": row.get("id"),
+                    "stars": row.get("rating"),
+                    "text": row.get("comment"),
+                }
+
+        customers = {}
+        if customer_ids:
+            try:
+                cust_resp = (
+                    supabase.table("user_profiles")
+                    .select("user_id,first_name,last_name,profile_image_url")
+                    .in_("user_id", list(customer_ids))
+                    .execute()
+                )
+            except Exception:
+                cust_resp = (
+                    supabase.table("user_details")
+                    .select("id,first_name,last_name,profile_image_url")
+                    .in_("id", list(customer_ids))
+                    .execute()
+                )
+            for row in cust_resp.data or []:
+                uid = row.get("user_id") or row.get("id")
+                customers[uid] = {
+                    "id": uid,
+                    "name": f"{row.get('first_name','')} {row.get('last_name','')}".strip() or "Customer",
+                    "avatar": row.get("profile_image_url"),
+                }
+
+        hydrated = []
+        for row in rows:
+            enriched = dict(row)
+            enriched["salon"] = salons.get(row.get("salon_id"))
+            enriched["service"] = services.get(row.get("service_id"))
+            enriched["barber"] = barbers.get(row.get("barber_id"))
+            enriched["customer"] = customers.get(row.get("customer_id"))
+            if row.get("id") in reviews_map:
+                enriched["review"] = reviews_map[row["id"]]
+            hydrated.append(enriched)
+        return hydrated
 
     # ------ booking methods ------
     @staticmethod
@@ -135,7 +282,7 @@ class AppointmentService:
         """
         try:
             role = user.get("role")
-            uid = user.get("id")
+            uid = user.get("sub")
 
             if role == "customer":
                 appointment_data["customer_id"] = uid
@@ -180,6 +327,15 @@ class AppointmentService:
             ):
                 return None, "Appointment time overlaps with an existing appointment."
 
+            ok, message = AppointmentService.is_barber_available(
+                appointment_data["salon_id"],
+                appointment_data["barber_id"],
+                appointment_data["start_at"],
+                appointment_data["end_at"]
+            )
+            if not ok:
+                return None, message
+
             appointment_data.setdefault("status", "scheduled")
 
             payload = {
@@ -189,14 +345,14 @@ class AppointmentService:
                 "salon_id":    appointment_data["salon_id"],
                 "start_at":    appointment_data["start_at"],
                 "end_at":      appointment_data["end_at"],
-                "status":      appointment_data["status"],
                 "notes":       appointment_data.get("notes"),
             }
 
             response = supabase.table("appointments").insert(payload).execute()
             if getattr(response, "error", None):
                 return None, response.error.message
-            return response.data[0], None
+            created_id = response.data[0]["id"]
+            return AppointmentService.get_by_id(created_id, user=user)
 
         except Exception as e:
             return None, str(e)
@@ -252,7 +408,7 @@ class AppointmentService:
                 return None, response.error.message
             if not response.data:
                 return None, "Nothing updated"
-            return response.data[0], None
+            return AppointmentService.get_by_id(appointment_id, user=user)
         
         except Exception as e:
             return None, str(e)
@@ -279,7 +435,7 @@ class AppointmentService:
             response = supabase.table("appointments").update(update).eq("id", appointment_id).execute()
             if getattr(response, "error", None) or not response.data:
                 return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Update failed"
-            return response.data[0], None
+            return AppointmentService.get_by_id(appointment_id, user=user)
         except Exception as e:
             return None, str(e)
     
@@ -296,7 +452,7 @@ class AppointmentService:
           - parse ISO -> datetime if needed
           - compute end from service duration if not provided (we need service_id from row)
           - availability + overlap checks
-          - set status=rescheduled
+          - set status=scheduled
         """
         try:
             # fetch current row (need service_id + duration)
@@ -334,19 +490,19 @@ class AppointmentService:
                 "barber_id": barber_id,
                 "start_at": new_start_at,
                 "end_at": new_end_at,
-                "status": "rescheduled",
+                "status": "scheduled",
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             response = supabase.table("appointments").update(update).eq("id", appointment_id).execute()
             if getattr(response, "error", None) or not response.data:
                 return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Nothing updated"
-            return response.data[0], None
+            return AppointmentService.get_by_id(appointment_id, user=user)
         except Exception as e:
             return None, str(e)
     
     # ------ workflow ------
     @staticmethod
-    def confirm_or_deny(appointment_id: str, action: str, *, user: dict):
+    def confirm_or_deny(appointment_id: str, action: str, *, user: dict, reason: Optional[str] = None):
         """
         action: 'confirm' or 'deny'
         \nonly admins, owners (of that salon), or the assigned barber may do this.
@@ -360,7 +516,7 @@ class AppointmentService:
                 return None, error
             
             role = user.get("role")
-            uid = user.get("id")
+            uid = user.get("sub")
             
             if role == "admin":
                 pass
@@ -376,17 +532,28 @@ class AppointmentService:
             else:
                 return None, "Forbidden"
             
-            status = "scheduled" if action == "confirm" else "denied"
+            if action == "confirm":
+                update_payload = {
+                    "status": "confirmed",
+                    "cancellation_reason": None,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }
+            else:
+                update_payload = {
+                    "status": "cancelled",
+                    "cancellation_reason": reason,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }
 
             response = (
                 supabase.table("appointments")
-                .update({"status": status, "updated_at": datetime.now(timezone.utc).isoformat()})
+                .update(update_payload)
                 .eq("id", appointment_id)
                 .execute()
             )
             if getattr(response, "error", None) or not response.data:
                 return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Appointment not found"
-            return response.data[0], None
+            return AppointmentService.get_by_id(appointment_id, user=user)
         except Exception as e:
             return None, str(e)
     
@@ -400,7 +567,7 @@ class AppointmentService:
             return None, error
 
         role = user.get("role")
-        uid = user.get("id")
+        uid = user.get("sub")
         if role == "admin":
             pass
         elif role == "salon_owner":
@@ -419,7 +586,7 @@ class AppointmentService:
         response = supabase.table("appointments").update(update).eq("id", appointment_id).execute()
         if getattr(response, "error", None) or not response.data:
             return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Update failed"
-        return response.data[0], None
+        return AppointmentService.get_by_id(appointment_id, user=user)
 
 
     # ------ availability ------
@@ -470,6 +637,110 @@ class AppointmentService:
             return False, "Appointment time overlaps with another booking"
 
         return True, None
+
+    @staticmethod
+    def get_available_slots(salon_id: str, barber_id: str, service_id: str, date_str: str):
+        try:
+            service, error = AppointmentService._get_service(service_id)
+            if error:
+                return None, error
+            duration_minutes = int(service.get("duration_minutes") or 30)
+            slot_length = timedelta(minutes=duration_minutes)
+
+            tz_name = AppointmentService._get_salon_timezone(salon_id)
+            tz = ZoneInfo(tz_name)
+            try:
+                base_date = datetime.fromisoformat(f"{date_str}T00:00:00")
+            except ValueError:
+                return None, "Invalid date format. Expected YYYY-MM-DD."
+            day_local = base_date.replace(tzinfo=tz)
+            day_start_local = datetime.combine(day_local.date(), time(0, 0), tz)
+            day_end_local = day_start_local + timedelta(days=1)
+
+            dow = day_local.weekday()
+            availability = (
+                supabase.table("barber_availability")
+                .select("start_time,end_time,is_active")
+                .eq("barber_id", barber_id)
+                .eq("day_of_week", dow)
+                .eq("is_active", True)
+                .order("start_time", desc=False)
+                .execute()
+            )
+            windows = availability.data or []
+            if not windows:
+                return [], None
+
+            start_utc = day_start_local.astimezone(timezone.utc).isoformat()
+            end_utc = day_end_local.astimezone(timezone.utc).isoformat()
+
+            unavail_resp = (
+                supabase.table("barber_unavailability")
+                .select("start_datetime,end_datetime")
+                .eq("barber_id", barber_id)
+                .lt("start_datetime", end_utc)
+                .gt("end_datetime", start_utc)
+                .execute()
+            )
+            unavail = [
+                (
+                    datetime.fromisoformat(row["start_datetime"]),
+                    datetime.fromisoformat(row["end_datetime"])
+                )
+                for row in (unavail_resp.data or [])
+            ]
+
+            appt_resp = (
+                supabase.table("appointments")
+                .select("start_at,end_at,status")
+                .eq("barber_id", barber_id)
+                .eq("salon_id", salon_id)
+                .lt("start_at", end_utc)
+                .gt("end_at", start_utc)
+                .execute()
+            )
+            blocking_status = {"scheduled", "confirmed"}
+            booked = [
+                (
+                    datetime.fromisoformat(row["start_at"]),
+                    datetime.fromisoformat(row["end_at"])
+                )
+                for row in (appt_resp.data or [])
+                if row.get("status") in blocking_status
+            ]
+
+            now_utc = datetime.now(timezone.utc)
+            slots = []
+            for window in windows:
+                try:
+                    start_time = time.fromisoformat(window["start_time"])
+                    end_time = time.fromisoformat(window["end_time"])
+                except Exception:
+                    continue
+                window_start = datetime.combine(day_local.date(), start_time, tz)
+                window_end = datetime.combine(day_local.date(), end_time, tz)
+                current = window_start
+                while current + slot_length <= window_end:
+                    slot_start_utc = current.astimezone(timezone.utc)
+                    slot_end_utc = (current + slot_length).astimezone(timezone.utc)
+                    if slot_start_utc < now_utc:
+                        current += slot_length
+                        continue
+                    if any(u_start < slot_end_utc and u_end > slot_start_utc for u_start, u_end in unavail):
+                        current += slot_length
+                        continue
+                    if any(b_start < slot_end_utc and b_end > slot_start_utc for b_start, b_end in booked):
+                        current += slot_length
+                        continue
+                    slots.append({
+                        "start_at": slot_start_utc.isoformat(),
+                        "end_at": slot_end_utc.isoformat(),
+                        "label": current.strftime("%I:%M %p").lstrip("0") or current.strftime("%H:%M"),
+                    })
+                    current += slot_length
+            return slots, None
+        except Exception as e:
+            return None, str(e)
     
     # ------ reads ------
     @staticmethod
@@ -487,7 +758,8 @@ class AppointmentService:
                 return None, "Appointment not found"
             if not AppointmentService._can_manage(user, response.data):
                 return None, "Forbidden"
-            return response.data, None
+            enriched = AppointmentService._hydrate_appointments([response.data])
+            return (enriched[0] if enriched else response.data), None
         except Exception as e:
             return None, str(e)
         
@@ -510,7 +782,8 @@ class AppointmentService:
             response = query.execute()
             if getattr(response, "error", None):
                 return None, response.error.message
-            return response.data, None
+            data = AppointmentService._hydrate_appointments(response.data or [])
+            return data, None
         except Exception as e:
             return None, str(e)
         
@@ -534,7 +807,8 @@ class AppointmentService:
             response = query.execute()
             if getattr(response, "error", None):
                 return None, response.error.message
-            return response.data, None
+            data = AppointmentService._hydrate_appointments(response.data or [])
+            return data, None
         except Exception as e:
             return None, str(e)
         
@@ -557,7 +831,8 @@ class AppointmentService:
             response = query.execute()
             if getattr(response, "error", None):
                 return None, response.error.message
-            return response.data, None
+            data = AppointmentService._hydrate_appointments(response.data or [])
+            return data, None
         except Exception as e:
             return None, str(e)
 
@@ -583,4 +858,59 @@ class AppointmentService:
         response = query.execute()
         if getattr(response,"error",None):
             return None, response.error.message
-        return response.data or [], None
+        data = AppointmentService._hydrate_appointments(response.data or [])
+        return data, None
+
+    @staticmethod
+    def create_review(appointment_id: str, rating: int, comment: str, *, user: dict):
+        if rating < 1 or rating > 5:
+            return None, "Rating must be between 1 and 5"
+
+        current, error = AppointmentService.get_by_id(appointment_id, user=user)
+        if error:
+            return None, error
+        if current.get("customer_id") != user.get("sub"):
+            return None, "Forbidden"
+        if current.get("status") not in ("completed",):
+            return None, "Only completed appointments can be reviewed"
+
+        timestamp = datetime.now(timezone.utc).isoformat()
+        payload = {
+            "rating": rating,
+            "comment": comment,
+            "updated_at": timestamp,
+        }
+        existing = (
+            supabase.table("reviews")
+            .select("id")
+            .eq("appointment_id", appointment_id)
+            .single()
+            .execute()
+        )
+        if existing.data:
+            response = (
+                supabase.table("reviews")
+                .update(payload)
+                .eq("appointment_id", appointment_id)
+                .execute()
+            )
+        else:
+            payload.update({
+                "appointment_id": appointment_id,
+                "salon_id": current.get("salon_id"),
+                "user_id": user.get("sub"),
+                "created_at": timestamp,
+            })
+            response = supabase.table("reviews").insert(payload).execute()
+
+        if getattr(response, "error", None):
+            return None, response.error.message
+
+        review_row = (
+            supabase.table("reviews")
+            .select("id,rating,comment,created_at")
+            .eq("appointment_id", appointment_id)
+            .single()
+            .execute()
+        )
+        return review_row.data, None

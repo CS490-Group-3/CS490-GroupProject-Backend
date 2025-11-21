@@ -1,0 +1,123 @@
+---
+tags:
+  - Users
+summary: Get current user's visit history
+description: >
+  Returns complete visit history for the authenticated customer across all salons.
+  Aggregates appointments, total spend, loyalty transactions, uploaded images, and notes.
+  Provides a chronological timeline of all customer interactions.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+    example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  - in: query
+    name: salon_id
+    type: string
+    required: false
+    description: Optional filter to get history for a specific salon only
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+responses:
+  200:
+    description: Visit history retrieved successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Visit history retrieved successfully"
+        history:
+          type: object
+          properties:
+            customer_id:
+              type: string
+              example: "123e4567-e89b-12d3-a456-426614174000"
+            salon_id:
+              type: string
+              nullable: true
+              example: "b534633a-23bc-4479-968f-8a004615821c"
+            statistics:
+              type: object
+              properties:
+                total_visits:
+                  type: integer
+                  example: 15
+                total_appointments:
+                  type: integer
+                  example: 20
+                total_spend:
+                  type: number
+                  example: 450.00
+                loyalty_points:
+                  type: integer
+                  example: 120
+                total_images:
+                  type: integer
+                  example: 5
+                appointments_by_status:
+                  type: object
+                  additionalProperties:
+                    type: integer
+                  example:
+                    completed: 15
+                    scheduled: 3
+                    cancelled: 2
+            appointments:
+              type: array
+              items:
+                type: object
+            completed_appointments:
+              type: array
+              items:
+                type: object
+            images:
+              type: array
+              items:
+                type: object
+            loyalty_transactions:
+              type: array
+              items:
+                type: object
+            timeline:
+              type: array
+              description: Chronological timeline of all visits, images, and transactions
+              items:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum: [appointment, image, loyalty]
+                  date:
+                    type: string
+                    format: date-time
+                  id:
+                    type: string
+            total_spend:
+              type: number
+              example: 450.00
+            loyalty_points:
+              type: integer
+              example: 120
+  401:
+    description: Unauthorized - Invalid or missing token
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unauthorized"
+  500:
+    description: Internal server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Failed to get visit history"
+
