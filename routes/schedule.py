@@ -45,8 +45,8 @@ def get_availability():
     except Exception as e:
         return jsonify({"error2": str(e)}), 500
     
-    
-    
+
+
 @schedule_bp.route('/availability', methods=['POST'])
 @login_required()
 @role_required(['barber', 'admin', 'salon_owner'])
@@ -146,3 +146,169 @@ def update_availability():
         return jsonify({"error2": "Validation failed", "details": e.errors()}), 400
     except Exception as e:
         return jsonify({"error3": str(e)}), 500
+
+
+# --------- Unavailability / Blocking ----------
+
+def _resolve_barber_id(barber_id_param=None):
+    """
+    Resolve the effective barber_id for the current user.
+    """
+    user = get_current_user()
+    role = user.get("role")
+    user_id = user.get("sub")
+    current_barber_id, _ = AuthService.get_barber_id(user_id)
+
+    if role == "barber":
+        if not current_barber_id:
+            return None, "Current user is not associated with a barber"
+        if barber_id_param and barber_id_param != current_barber_id:
+            return None, "Forbidden"
+        return current_barber_id, None
+
+    if role in ["admin", "salon_owner"]:
+        if barber_id_param:
+            return barber_id_param, None
+        if current_barber_id:
+            return current_barber_id, None
+        return None, "Missing barber_id parameter"
+
+    return None, "Unauthorized role"
+
+
+@schedule_bp.route('/unavailability', methods=['GET'])
+@login_required()
+@role_required(['barber', 'admin', 'salon_owner'])
+@swag_from("../docs/schedule_get_unavailability.yml")
+def list_unavailability():
+    """
+    List blocked time windows for the barber.
+    Query params:
+      - barber_id (admin/salon_owner only)
+      - start_from (ISO datetime) -> only blocks ending after this timestamp
+      - end_before (ISO datetime) -> only blocks starting before this timestamp
+    """
+    try:
+        barber_id_param = request.args.get("barber_id")
+        start_from = request.args.get("start_from")
+        end_before = request.args.get("end_before")
+
+        barber_id, error = _resolve_barber_id(barber_id_param)
+        if error:
+            status = 403 if error == "Forbidden" else 400
+            return jsonify({"error": error}), status
+
+        blocks, svc_error = ScheduleService.list_unavailability(barber_id, start_from, end_before)
+        if svc_error:
+            return jsonify({"error": svc_error}), 400
+
+        return jsonify({
+            "barber_id": barber_id,
+            "count": len(blocks or []),
+            "blocks": blocks or []
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@schedule_bp.route('/unavailability', methods=['POST'])
+@login_required()
+@role_required(['barber', 'admin', 'salon_owner'])
+@swag_from("../docs/schedule_create_unavailability.yml")
+def create_unavailability():
+    """
+    Create a blocked time window (one-off unavailability) for the barber.
+    """
+    try:
+        json_data = request.get_json() or {}
+        barber_id_param = json_data.get("barber_id")
+
+        barber_id, error = _resolve_barber_id(barber_id_param)
+        if error:
+            status = 403 if error == "Forbidden" else 400
+            return jsonify({"error": error}), status
+
+        json_data["barber_id"] = barber_id
+        req = BarberUnavailabilityCreateRequest(**json_data)
+
+        result, svc_error = ScheduleService.create_unavailability(
+            barber_id=req.barber_id,
+            start_datetime=req.start_datetime,
+            end_datetime=req.end_datetime,
+            reason=req.reason
+        )
+        if svc_error:
+            return jsonify({"error": svc_error}), 400
+
+        return jsonify({"block": result}), 201
+    except ValidationError as e:
+        return jsonify({"error": "Validation failed", "details": e.errors()}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@schedule_bp.route('/unavailability/<block_id>', methods=['PATCH'])
+@login_required()
+@role_required(['barber', 'admin', 'salon_owner'])
+@swag_from("../docs/schedule_update_unavailability.yml")
+def update_unavailability(block_id):
+    """
+    Update a blocked time window for the barber.
+    """
+    try:
+        json_data = request.get_json() or {}
+        if not json_data:
+            return jsonify({"error": "Invalid JSON body"}), 400
+
+        barber_id_param = json_data.get("barber_id")
+        barber_id, error = _resolve_barber_id(barber_id_param)
+        if error:
+            status = 403 if error == "Forbidden" else 400
+            return jsonify({"error": error}), status
+
+        req = BarberUnavailabilityUpdateRequest(**json_data)
+        updates = req.model_dump(exclude_none=True)
+
+        result, svc_error = ScheduleService.update_unavailability(
+            block_id=block_id,
+            barber_id=barber_id,
+            updates=updates
+        )
+        if svc_error == "Forbidden":
+            return jsonify({"error": svc_error}), 403
+        if svc_error:
+            return jsonify({"error": svc_error}), 400
+
+        return jsonify({"message": "Blocked time updated successfully.", "block": result}), 200
+    except ValidationError as e:
+        return jsonify({"error": "Validation failed", "details": e.errors()}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@schedule_bp.route('/unavailability/<block_id>', methods=['DELETE'])
+@login_required()
+@role_required(['barber', 'admin', 'salon_owner'])
+@swag_from("../docs/schedule_delete_unavailability.yml")
+def delete_unavailability(block_id):
+    """
+    Delete a blocked time window.
+    """
+    try:
+        barber_id_param = request.args.get("barber_id")
+        barber_id, error = _resolve_barber_id(barber_id_param)
+        if error:
+            status = 403 if error == "Forbidden" else 400
+            return jsonify({"error": error}), status
+
+        success, svc_error = ScheduleService.delete_unavailability(block_id, barber_id)
+        if svc_error == "Forbidden":
+            return jsonify({"error": svc_error}), 403
+        if svc_error:
+            return jsonify({"error": svc_error}), 400
+        if not success:
+            return jsonify({"error": "Failed to delete block"}), 400
+
+        return jsonify({"message": "Blocked time deleted successfully."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
