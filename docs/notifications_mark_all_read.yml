@@ -1,0 +1,32 @@
+---
+tags:
+  - Notifications
+summary: Mark all notifications as read for the authenticated user
+description: >
+  Marks **all** active (already scheduled) notifications  
+  belonging to the authenticated user as `read`.
+
+consumes:
+  - application/json
+produces:
+  - application/json
+
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+responses:
+  200:
+    description: All notifications marked as read successfully
+    schema:
+      type: object
+      properties:
+        updated:
+          type: integer
+          description: Number of notifications updated
+  500:
+    description: Internal server error
+

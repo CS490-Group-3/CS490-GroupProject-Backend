@@ -1,6 +1,14 @@
 import uuid
 from datetime import datetime, timedelta
 from config import supabase
+import json
+
+def serialize(row):
+    for key, value in row.items():
+        if isinstance(value, datetime):
+            row[key] = value.isoformat()
+    return row
+
 
 class NotificationService:
     @staticmethod
@@ -257,12 +265,9 @@ class NotificationService:
         print(f"[notify_promotional_offer] Sent to {len(user_ids)} users for offer {offer_id} ({target_audience}).")
 
 
-
+    """
     @staticmethod
     def mark_as_read(notification_id: str):
-        """
-        Mark a notification as read and record timestamp.
-        """
         try:
             # validate uuid format
             uuid.UUID(notification_id)
@@ -278,7 +283,7 @@ class NotificationService:
         except Exception as e:
             print("Error updating notification read_at:", e)
             return {"error": str(e)}, 500
-
+    """
 
     @staticmethod
     def create_notification(user_id, event_type, title, message, related_id=None, scheduled_for=None):
@@ -310,4 +315,124 @@ class NotificationService:
             "created_at": datetime.utcnow().isoformat(),
             "scheduled_for": datetime.utcnow().isoformat(), 
         }
+
+
+
+    @staticmethod
+    def get_user_notifications(user_id):
+        rows = (
+            supabase.table("notifications")
+            .select("*")
+            .eq("user_id", user_id)
+            .lte("scheduled_for", datetime.utcnow().isoformat())
+            .order("created_at", desc=True)
+            .execute()
+            .data
+        )
+        return rows
+
+    @staticmethod
+    def get_unread_count(user_id):
+        count = (
+            supabase.table("notifications")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .neq("status", "read")
+            .lte("scheduled_for", datetime.utcnow().isoformat())
+            .execute()
+            .count
+        )
+        return count
+
+
+
+
+    @staticmethod
+    def mark_as_read(user_id, notif_id):
+        print("MARK_AS_READ: minimal version")
+
+        try:
+            res = (
+                supabase.table("notifications")
+                .select("id,user_id,scheduled_for,status")
+                .eq("id", notif_id)
+                .single()
+                .execute()
+            )
+        except Exception as e:
+            print("ERROR on initial select:", repr(e))
+            raise
+
+        notif = res.data
+        if not notif:
+            raise NotFound("Notification not found")
+
+        if notif["user_id"] != user_id:
+            raise Forbidden("Not allowed to modify this notification")
+
+        sched = notif["scheduled_for"]
+
+        if isinstance(sched, bytes):
+            sched = sched.decode("utf-8")
+
+        if isinstance(sched, str):
+            sched_dt = datetime.fromisoformat(sched.replace("Z", "+00:00"))
+        else:
+            sched_dt = sched
+
+        now = datetime.utcnow()
+        if getattr(sched_dt, "tzinfo", None) is not None:
+            now = now.replace(tzinfo=sched_dt.tzinfo)
+
+        if sched_dt > now:
+            raise Forbidden("Notification not active yet")
+
+        try:
+            supabase.table("notifications").update(
+                {"status": "read"}   # <-- no read_at for now
+            ).eq("id", notif_id).execute()
+        except Exception as e:
+            print("ERROR on update:", repr(e))
+            raise
+
+        return {
+            "id": notif_id,
+            "status": "read"
+        }
+
+
+
+
+    @staticmethod
+    def mark_all_as_read(user_id):
+
+        try:
+            res = (
+                supabase.table("notifications")
+                .select("id, user_id, scheduled_for, status")
+                .eq("user_id", user_id)
+                .neq("status", "read")
+                .lte("scheduled_for", datetime.utcnow().isoformat())
+                .execute()
+            )
+        except Exception as e:
+            print("ERROR on initial select (mark all):", repr(e))
+            raise
+
+        rows = res.data or []
+
+        if not rows:
+            return {"updated": 0}
+
+        notif_ids = [row["id"] for row in rows]
+
+        try:
+            supabase.table("notifications").update(
+                {"status": "read"}
+            ).in_("id", notif_ids).execute()
+        except Exception as e:
+            print("ERROR on update (mark all):", repr(e))
+            raise
+
+        return {"updated": len(notif_ids)}
 

@@ -1,16 +1,19 @@
-from flask import Blueprint, send_file
+from flask import Blueprint, send_file, jsonify, g
 from datetime import datetime
 from config import supabase
 import io
 import uuid
 from pydantic import ValidationError
 from services.notification_service import NotificationService
+from middleware.auth import login_required
+from flasgger.utils import swag_from
 
-notifications_bp = Blueprint('notifications', __name__)
 
+notifications_bp = Blueprint('notifications', __name__, url_prefix="/api/notifications")
+
+"""
 @notifications_bp.route('/track/<notification_id>.png', methods=['GET'])
 def track_open(notification_id):
-    """Public tracking pixel endpoint for email opens."""
     # Delegate DB logic to service layer
     NotificationService.mark_as_read(notification_id)
 
@@ -19,3 +22,39 @@ def track_open(notification_id):
             b'\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00' \
             b'\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'
     return send_file(io.BytesIO(pixel), mimetype='image/gif')
+"""
+
+@notifications_bp.get("/")
+@login_required()
+@swag_from("../docs/notifications_list.yml")
+def get_notifications():
+    user_id = g.user["sub"]
+    rows = NotificationService.get_user_notifications(user_id)
+    return jsonify(rows), 200
+
+
+@notifications_bp.get("/unread-count")
+@login_required()
+@swag_from("../docs/notifications_unread_count.yml")
+def unread_count():
+    user_id = g.user["sub"]
+    count = NotificationService.get_unread_count(user_id)
+    return jsonify({"unread": count}), 200
+
+
+@notifications_bp.patch("/<notif_id>/mark-read")
+@login_required()
+@swag_from("../docs/notifications_mark_read.yml")
+def mark_notif_read(notif_id):
+    user_id = g.user["sub"]
+    updated = NotificationService.mark_as_read(user_id, notif_id)
+    return jsonify(updated), 200
+
+
+@notifications_bp.patch("/mark-all-read")
+@login_required()
+@swag_from("../docs/notifications_mark_all_read.yml")
+def mark_all_read():
+    user_id = g.user["sub"]
+    updated = NotificationService.mark_all_as_read(user_id)
+    return jsonify(updated), 200
