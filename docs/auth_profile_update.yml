@@ -45,6 +45,30 @@ parameters:
           format: date
           description: User's date of birth (YYYY-MM-DD)
           example: "1990-01-15"
+        city:
+          type: string
+          description: User's city
+          example: "New York"
+        state:
+          type: string
+          description: User's state or province
+          example: "NY"
+        age_bracket:
+          type: string
+          enum: ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
+          description: User's age bracket
+          example: "25-34"
+        gender:
+          type: string
+          enum: ["male", "female", "non-binary", "prefer-not-to-say", "other"]
+          description: User's gender
+          example: "male"
+        preferred_services:
+          type: array
+          items:
+            type: string
+          description: List of preferred service IDs or names
+          example: ["Haircut", "Beard Trim"]
 
 responses:
   200:
@@ -77,6 +101,23 @@ responses:
             date_of_birth:
               type: string
               example: "1990-01-15"
+            city:
+              type: string
+              example: "New York"
+            state:
+              type: string
+              example: "NY"
+            age_bracket:
+              type: string
+              example: "25-34"
+            gender:
+              type: string
+              example: "male"
+            preferred_services:
+              type: array
+              items:
+                type: string
+              example: ["Haircut", "Beard Trim"]
             updated_at:
               type: string
               format: date-time
