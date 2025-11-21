@@ -51,3 +51,30 @@ class StorageService:
             return res["signedURL"]
         except Exception as e:
             raise Exception(f"Failed to regenerate signed URL: {e}")
+
+
+    @staticmethod
+    def upload_review_image(file, review_id, user_id):
+        bucket_name = "review-images"
+
+        ext = file.filename.split(".")[-1]
+        filename = f"{review_id}/{uuid.uuid4()}.{ext}"
+        file_bytes = file.read()
+
+        res = supabase.storage.from_(bucket_name).upload(
+            filename,
+            file_bytes,
+            file_options={"content-type": file.mimetype}
+        )
+        if hasattr(res, "error") and res.error:
+            raise Exception(res.error.message)
+
+        signed = supabase.storage.from_(bucket_name).create_signed_url(
+            filename,
+            int(timedelta(days=7).total_seconds())
+        )
+
+        return {
+            "filepath": filename,
+            "signed_url": signed["signedURL"]
+        }

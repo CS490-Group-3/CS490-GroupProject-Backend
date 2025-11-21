@@ -1,0 +1,50 @@
+---
+tags:
+  - Reviews
+summary: Partially update an existing review
+description: >
+  Allows an authenticated **customer** to update their own review.  
+  Only the provided fields will be modified (PATCH operation).
+consumes:
+  - application/json
+produces:
+  - application/json
+
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: review_id
+    type: string
+    format: uuid
+    required: true
+    description: The ID of the review to update
+
+  - in: body
+    name: updates
+    description: Fields to update
+    required: true
+    schema:
+      type: object
+      properties:
+        rating:
+          type: integer
+        title:
+          type: string
+        comment:
+          type: string
+
+responses:
+  200:
+    description: Review updated successfully
+  403:
+    description: User does not own this review
+  404:
+    description: Review not found
+  500:
+    description: Internal server error
+

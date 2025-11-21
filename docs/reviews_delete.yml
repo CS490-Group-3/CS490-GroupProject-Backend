@@ -1,0 +1,34 @@
+---
+tags:
+  - Reviews
+summary: Delete a review
+description: >
+  Allows an authenticated **customer** to delete their own review.  
+  All associated images and salon responses will also be removed.
+produces:
+  - application/json
+
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: review_id
+    type: string
+    format: uuid
+    required: true
+    description: The ID of the review to delete
+
+responses:
+  200:
+    description: Review deleted successfully
+  403:
+    description: User cannot delete this review
+  404:
+    description: Review not found
+  500:
+    description: Internal server error
+

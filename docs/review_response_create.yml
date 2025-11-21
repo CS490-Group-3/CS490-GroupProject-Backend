@@ -1,0 +1,47 @@
+---
+tags:
+  - Reviews
+summary: Create a salon owner or barber response to a review
+description: >
+  Allows an authenticated **salon_owner** or the **assigned barber**  
+  to respond to a customer's review.
+consumes:
+  - application/json
+produces:
+  - application/json
+
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: review_id
+    type: string
+    format: uuid
+    required: true
+    description: ID of the review to respond to
+
+  - in: body
+    name: response
+    required: true
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+
+responses:
+  201:
+    description: Response created successfully
+  403:
+    description: Not authorized (not owner or assigned barber)
+  404:
+    description: Review not found
+  409:
+    description: Review already has a response
+  500:
+    description: Internal server error
+
