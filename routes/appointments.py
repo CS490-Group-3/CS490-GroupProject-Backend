@@ -295,6 +295,22 @@ def create_review(appointment_id):
         return jsonify({"error": error}), 400
     return jsonify(review), 201
 
+#POST /<appointment_id>/running-late
+@appointments_bp.post("/<appointment_id>/running-late")
+@login_required()
+@role_required(["barber"])   
+@swag_from("../docs/appointment_running_late.yml")
+def mark_running_late(appointment_id):
+    user = get_current_user()
+
+    updated = NotificationService.barber_running_late(
+        user_id=user["sub"],
+        appointment_id=appointment_id
+    )
+
+    return jsonify(updated), 200
+
+
 #GET /<appointment_id>
 @appointments_bp.route("/<appointment_id>", methods=["GET"])
 @login_required()

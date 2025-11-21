@@ -2,6 +2,8 @@ import uuid
 from datetime import datetime, timedelta
 from config import supabase
 import json
+from flask import jsonify
+
 
 def serialize(row):
     for key, value in row.items():
@@ -435,4 +437,57 @@ class NotificationService:
             raise
 
         return {"updated": len(notif_ids)}
+
+
+    @staticmethod
+    def barber_running_late(user_id: str, appointment_id: str):
+
+        # Get barber profile for this user
+        barber = (
+            supabase.table("barbers")
+            .select("id")
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        ).data
+
+        if not barber:
+            return {"error": "You are not registered as a barber"}, 403
+
+        barber_profile_id = barber["id"]
+
+        # Fetch the appointment
+        res = (
+            supabase.table("appointments")
+            .select("id, barber_id, customer_id, salon_id, start_at")
+            .eq("id", appointment_id)
+            .single()
+            .execute()
+        )
+
+        appt = res.data
+        if not appt:
+            return {"error": "Appointment not found"}, 404
+
+        # Correct authorization check
+        if appt["barber_id"] != barber_profile_id:
+            return {"error": "You are not assigned to this appointment"}, 403
+
+        # Create notification for customer
+        notif = {
+            "id": str(uuid.uuid4()),
+            "user_id": appt["customer_id"],
+            "notification_type": "barber_running_late",
+            "title": "Your barber is running late",
+            "message": "Your barber has indicated they are running a little behind schedule.",
+            "status": "sent",
+            "related_id": appointment_id,
+            "created_at": datetime.utcnow().isoformat(),
+            "scheduled_for": datetime.utcnow().isoformat(),
+        }
+
+        supabase.table("notifications").insert(notif).execute()
+
+        return {"success": True}, 200
+
 
