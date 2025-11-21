@@ -17,7 +17,16 @@ def create_app():
     app.config['JSON_SORT_KEYS'] = False
     
     # Enable CORS
-    CORS(app)
+    CORS(
+        app,
+        resources={r"/api/*": {
+            "origins": [
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+            ]
+        }},
+        supports_credentials=True
+    )
 
     # Register blueprints
     app.register_blueprint(health_bp)

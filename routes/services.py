@@ -1,14 +1,37 @@
-from flask import Blueprint, request, jsonify, g, json
+from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from middleware import login_required, role_required, get_current_user
-from middleware.notify import notify
 from models.services import ServiceCreateRequest, ServiceResponse
 from services.salon_service import SalonService
 from flasgger.utils import swag_from
+from config import supabase
 
 services_bp = Blueprint("services_bp", __name__, url_prefix="/api/services")
+services_bp.strict_slashes = False
 
-@services_bp.route("/", methods=["POST"])
+@services_bp.route("", methods=["GET"], strict_slashes=False)
+@services_bp.route("/", methods=["GET"], strict_slashes=False)
+@login_required()
+def list_services_route():
+    """
+    List services globally or for a specific salon.
+    """
+    try:
+        salon_id = request.args.get("salon_id")
+        unique = request.args.get("unique")
+        query = supabase.table("services").select("id,salon_id,name,description,duration_minutes,price,is_active")
+        if salon_id:
+            query = query.eq("salon_id", salon_id)
+        response = query.execute()
+        rows = response.data or []
+        if unique == "name":
+            names = sorted({row.get("name") for row in rows if row.get("name")})
+            return jsonify({"services": names}), 200
+        return jsonify({"services": rows}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@services_bp.route("/", methods=["POST"], strict_slashes=False)
 @login_required()
 @role_required(['salon_owner'])
 def create_service():
@@ -38,7 +61,7 @@ def create_service():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
-@services_bp.route("/<service_id>", methods=["GET"])
+@services_bp.route("/<service_id>", methods=["GET"], strict_slashes=False)
 @login_required()
 def get_service(service_id):
     """

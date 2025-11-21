@@ -7,19 +7,17 @@ from datetime import datetime
 
 # Enum for Appointment Status
 AppointmentStatus = Literal[
-    "pending",
     "scheduled",
+    "confirmed",
     "completed",
-    "denied",
     "cancelled",
-    "rescheduled",
     "no_show"
 ]
 
 
 class AppointmentCreateRequest(BaseModel):
     """Request model for creating an appointment."""
-    customer_id: str
+    customer_id: Optional[str] = None
     barber_id: str
     service_id: str
     salon_id: str
