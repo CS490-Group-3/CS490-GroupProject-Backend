@@ -150,53 +150,26 @@ def update_availability():
 
 # --------- Unavailability / Blocking ----------
 
-def _resolve_barber_id(barber_id_param=None):
-    """
-    Resolve the effective barber_id for the current user.
-    """
-    user = get_current_user()
-    role = user.get("role")
-    user_id = user.get("sub")
-    current_barber_id, _ = AuthService.get_barber_id(user_id)
-
-    if role == "barber":
-        if not current_barber_id:
-            return None, "Current user is not associated with a barber"
-        if barber_id_param and barber_id_param != current_barber_id:
-            return None, "Forbidden"
-        return current_barber_id, None
-
-    if role in ["admin", "salon_owner"]:
-        if barber_id_param:
-            return barber_id_param, None
-        if current_barber_id:
-            return current_barber_id, None
-        return None, "Missing barber_id parameter"
-
-    return None, "Unauthorized role"
-
-
 @schedule_bp.route('/unavailability', methods=['GET'])
 @login_required()
 @role_required(['barber', 'admin', 'salon_owner'])
 @swag_from("../docs/schedule_get_unavailability.yml")
 def list_unavailability():
     """
-    List blocked time windows for the barber.
+    List blocked time windows for the authenticated barber.
     Query params:
-      - barber_id (admin/salon_owner only)
       - start_from (ISO datetime) -> only blocks ending after this timestamp
       - end_before (ISO datetime) -> only blocks starting before this timestamp
     """
     try:
-        barber_id_param = request.args.get("barber_id")
+        user_id = get_current_user().get('sub')
+        barber_id, error = AuthService.get_barber_id(user_id)
+        if not barber_id:
+            message = error or "Current user is not a barber associated with a salon"
+            return jsonify({"error": message}), 400
+        
         start_from = request.args.get("start_from")
         end_before = request.args.get("end_before")
-
-        barber_id, error = _resolve_barber_id(barber_id_param)
-        if error:
-            status = 403 if error == "Forbidden" else 400
-            return jsonify({"error": error}), status
 
         blocks, svc_error = ScheduleService.list_unavailability(barber_id, start_from, end_before)
         if svc_error:
@@ -221,15 +194,18 @@ def create_unavailability():
     """
     try:
         json_data = request.get_json() or {}
-        barber_id_param = json_data.get("barber_id")
+        if not json_data:
+            return jsonify({"error": "Invalid JSON body"}), 400
 
-        barber_id, error = _resolve_barber_id(barber_id_param)
-        if error:
-            status = 403 if error == "Forbidden" else 400
-            return jsonify({"error": error}), status
+        user_id = get_current_user().get('sub')
+        barber_id, error = AuthService.get_barber_id(user_id)
+        if not barber_id:
+            message = error or "Current user is not associated with a barber"
+            return jsonify({"error": message}), 400
 
         json_data["barber_id"] = barber_id
         req = BarberUnavailabilityCreateRequest(**json_data)
+        print("[unavailability] create payload", req.model_dump())
 
         result, svc_error = ScheduleService.create_unavailability(
             barber_id=req.barber_id,
@@ -260,11 +236,11 @@ def update_unavailability(block_id):
         if not json_data:
             return jsonify({"error": "Invalid JSON body"}), 400
 
-        barber_id_param = json_data.get("barber_id")
-        barber_id, error = _resolve_barber_id(barber_id_param)
-        if error:
-            status = 403 if error == "Forbidden" else 400
-            return jsonify({"error": error}), status
+        user_id = get_current_user().get('sub')
+        barber_id, error = AuthService.get_barber_id(user_id)
+        if not barber_id:
+            message = error or "Current user is not associated with a barber"
+            return jsonify({"error": message}), 400
 
         req = BarberUnavailabilityUpdateRequest(**json_data)
         updates = req.model_dump(exclude_none=True)
@@ -295,11 +271,11 @@ def delete_unavailability(block_id):
     Delete a blocked time window.
     """
     try:
-        barber_id_param = request.args.get("barber_id")
-        barber_id, error = _resolve_barber_id(barber_id_param)
-        if error:
-            status = 403 if error == "Forbidden" else 400
-            return jsonify({"error": error}), status
+        user_id = get_current_user().get('sub')
+        barber_id, error = AuthService.get_barber_id(user_id)
+        if not barber_id:
+            message = error or "Current user is not associated with a barber"
+            return jsonify({"error": message}), 400
 
         success, svc_error = ScheduleService.delete_unavailability(block_id, barber_id)
         if svc_error == "Forbidden":
