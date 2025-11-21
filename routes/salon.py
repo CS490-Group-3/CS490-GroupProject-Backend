@@ -172,39 +172,6 @@ def get_salon_status_history(salon_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Add service provider to salon
-@salon_bp.route("/provider", methods=["POST"])
-@login_required()
-@role_required(['admin', 'salon_owner'])
-@swag_from("../docs/salon_add_provider.yml")
-def add_service_provider():
-    """
-    Add a new service provider to a salon.
-    """
-    try:
-        json_data = request.get_json()
-        if not json_data:
-            return jsonify({"error": "Invalid JSON body"}), 400
-        
-        salon_id = json_data.get('salon_id')
-        user_id = json_data.get('user_id')
-        
-        
-        if not salon_id or not user_id:
-            return jsonify({"error": "Missing required fields"}), 400
-        bio = json_data.get('bio', '')
-        years_experience = json_data.get('years_experience', 0)
-        is_active = json_data.get('is_active', True)
-        result, error = SalonService.add_service_provider(salon_id, user_id, bio, years_experience, is_active)
-        
-        if error:
-            return jsonify({"error": error}), 400
-        
-        return jsonify(result), 201
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 # ---------------------------------------3. GET SALON DATA
 # Get all services for a salon
 @salon_bp.route("/<salon_id>/services", methods=["GET"])
@@ -267,7 +234,6 @@ def get_salon_tags(salon_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @salon_bp.route("/<salon_id>/customers/<customer_id>/history", methods=["GET"])
 @login_required()
 @role_required(['salon_owner', 'barber', 'admin'], verify_with_supabase=True)
@@ -316,6 +282,60 @@ def get_salon_customer_history(salon_id: str, customer_id: str):
             "message": "Customer history retrieved successfully",
             "history": history
         }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+#---------------------------------------4. SALON EMPLOYEES (service providers/barbers)
+
+# Search 'barbers' to be added to salon
+@salon_bp.route("/provider/search", methods=["GET"])
+@login_required()
+@role_required(['admin', 'salon_owner'])
+def search_for_employee():
+    """
+    Search for service providers (barbers) to add to a salon by email.
+    /provider/search?email=whatever
+    """
+    try:
+        query = request.args.get("email", "")
+        if not query:
+            return jsonify({"error": "Missing search query parameter 'email'"}), 400
+        print("Searching for providers with email containing:", query)
+        result, error = SalonService.salon_owner_employee_search(query)
+        if error:
+            return jsonify({"error": error}), 404
+        return jsonify({"providers": result}), 200
+    except Exception as e:
+        return jsonify({"error3": str(e)}), 500
+
+# Add service provider to salon
+@salon_bp.route("/provider", methods=["POST"])
+@login_required()
+@role_required(['admin', 'salon_owner'])
+@swag_from("../docs/salon_add_provider.yml")
+def add_service_provider():
+    """
+    Add a new service provider to a salon.
+    """
+    try:
+        json_data = request.get_json()
+        if not json_data:
+            return jsonify({"error": "Invalid JSON body"}), 400
+        
+        salon_id = json_data.get('salon_id')
+        user_id = json_data.get('user_id')
+        
+        
+        if not salon_id or not user_id:
+            return jsonify({"error": "Missing required fields"}), 400
+        bio = json_data.get('bio', '')
+        years_experience = json_data.get('years_experience', 0)
+        is_active = json_data.get('is_active', True)
+        result, error = SalonService.add_service_provider(salon_id, user_id, bio, years_experience, is_active)
+        
+        if error:
+            return jsonify({"error": error}), 400
+        
+        return jsonify(result), 201
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
