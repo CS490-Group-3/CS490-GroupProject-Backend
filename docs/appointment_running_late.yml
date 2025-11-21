@@ -1,0 +1,37 @@
+---
+tags:
+  - Notifications
+summary: Notify a customer that their barber is running late
+description: >
+  Allows an authenticated **barber** to notify the customer of an appointment that they are running late.
+  Only the barber assigned to the appointment may send this notification.
+
+consumes:
+  - application/json
+produces:
+  - application/json
+
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+
+  - in: path
+    name: appointment_id
+    type: string
+    format: uuid
+    required: true
+    description: ID of the appointment
+
+responses:
+  200:
+    description: Notification sent successfully
+  403:
+    description: User is not the assigned barber
+  404:
+    description: Appointment not found
+  500:
+    description: Internal server error
+

@@ -1,0 +1,30 @@
+---
+tags:
+  - Notifications
+summary: Get unread notification count for the authenticated user
+description: >
+  Returns the number of notifications where `status` is  
+  **pending**, **sent**, or **failed** and `scheduled_for`  
+  has passed. Notifications with status `read` are excluded.
+
+produces:
+  - application/json
+
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+responses:
+  200:
+    description: Unread notification count returned successfully
+    schema:
+      type: object
+      properties:
+        unread:
+          type: integer
+  500:
+    description: Internal server error
+

@@ -1,0 +1,22 @@
+---
+tags:
+  - Reviews
+summary: List images for a review
+produces:
+  - application/json
+
+parameters:
+
+  - in: path
+    name: review_id
+    type: string
+    required: true
+
+responses:
+  200:
+    description: List of images
+  404:
+    description: Review not found
+  500:
+    description: Internal error
+

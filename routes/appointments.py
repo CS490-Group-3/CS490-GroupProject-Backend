@@ -7,7 +7,9 @@ from models.appointment import (
 )
 from services.appointment_service import AppointmentService
 from services.auth_service import AuthService
+from services.notification_service import NotificationService
 from middleware import login_required, role_required, get_current_user, get_owned_salons
+from middleware.notify import notify
 
 appointments_bp = Blueprint('appointments', __name__, url_prefix='/api/appointments')
 appointments_bp.strict_slashes = False
@@ -131,6 +133,14 @@ def create_appointment():
 @appointments_bp.route('/', methods=['PATCH'])
 @login_required()
 @role_required(['customer', 'admin', 'salon_owner', 'barber'])
+@notify(
+    recipients=["barber", "user"], 
+    event_type="appointment_confirmation",
+    title="Appointment Updated",
+    message_template="The appointment at {salon_name} for {service_name} has been updated.",
+    schedule_func=NotificationService.schedule_upcoming_appointment, 
+    related_key="appointment_id"
+)#notify user and barber upon update 
 @swag_from("../docs/update_appointment.yml")
 def update_appointment():
     """
@@ -156,7 +166,7 @@ def update_appointment():
             return jsonify({"error": error}), 403
         elif error:
             return jsonify({"error": error}), 400
-        
+    
         return jsonify({
             "message": "Appointment updated successfully.",
             "appointment": result
@@ -224,6 +234,13 @@ def reschedule_appointment(appointment_id):
 @appointments_bp.route("/<appointment_id>/action", methods=["PATCH"])
 @login_required()
 @role_required(["salon_owner", "barber", "admin"])
+@notify(
+    ["user"],
+    event_type="General",
+    title="Appointment status Updated",
+    message_template="Your appointment has been updated",
+    related_key="appointment_id",
+)
 @swag_from("../docs/confirm_or_deny.yml")
 def confirm_or_deny(appointment_id):
     """
@@ -278,6 +295,22 @@ def create_review(appointment_id):
         return jsonify({"error": error}), 400
     return jsonify(review), 201
 
+#POST /<appointment_id>/running-late
+@appointments_bp.post("/<appointment_id>/running-late")
+@login_required()
+@role_required(["barber"])   
+@swag_from("../docs/appointment_running_late.yml")
+def mark_running_late(appointment_id):
+    user = get_current_user()
+
+    updated = NotificationService.barber_running_late(
+        user_id=user["sub"],
+        appointment_id=appointment_id
+    )
+
+    return jsonify(updated), 200
+
+
 #GET /<appointment_id>
 @appointments_bp.route("/<appointment_id>", methods=["GET"])
 @login_required()
@@ -298,3 +331,6 @@ def get_appointment(appointment_id):
         return jsonify(row), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+

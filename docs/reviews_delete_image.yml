@@ -1,0 +1,29 @@
+---
+tags:
+  - Reviews
+summary: Delete a review image
+produces:
+  - application/json
+
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: image_id
+    type: string
+    required: true
+
+responses:
+  200:
+    description: Image deleted
+  403:
+    description: Forbidden
+  404:
+    description: Not found
+  500:
+    description: Internal error
+

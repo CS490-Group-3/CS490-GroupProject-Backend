@@ -1,0 +1,25 @@
+---
+tags:
+  - Notifications
+summary: Fetch all active notifications for the authenticated user
+description: >
+  Returns all notifications belonging to the authenticated user  
+  where the `scheduled_for` timestamp has already passed.  
+  Future-scheduled notifications are not included.
+
+produces:
+  - application/json
+
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+responses:
+  200:
+    description: List of notifications returned successfully
+  500:
+    description: Internal server error
+

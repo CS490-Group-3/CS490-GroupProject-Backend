@@ -1,0 +1,16 @@
+# Run every 10 minutes
+#on:
+ # schedule:
+  #  - cron: "*/10 * * * *"
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Supabase Function
+        run: |
+          curl -X POST https://saahafpvorplqdgqmvsf.functions.supabase.co/process-notifications \
+          -H "Authorization: Bearer ${{ secrets.FUNCTION_SECRET }}"
+
+~                                                                                                                                                                              
+~                               

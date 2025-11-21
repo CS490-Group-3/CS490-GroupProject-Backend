@@ -1,0 +1,31 @@
+---
+tags:
+  - Reviews
+summary: Get all reviews for a salon
+description: >
+  Returns every review associated with a salon, ordered by newest first.
+produces:
+  - application/json
+
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: ID of the salon to fetch reviews for
+
+responses:
+  200:
+    description: Salon reviews returned
+  404:
+    description: Salon not found
+  500:
+    description: Internal server error
+

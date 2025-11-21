@@ -1,0 +1,38 @@
+---
+tags:
+  - Notifications
+summary: Mark a specific notification as read
+description: >
+  Marks a notification as `read`, provided the notification  
+  belongs to the authenticated user and the notification’s  
+  `scheduled_for` timestamp has already passed.
+
+consumes:
+  - application/json
+produces:
+  - application/json
+
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: notif_id
+    description: Notification ID to mark as read
+    required: true
+    type: string
+    format: uuid
+
+responses:
+  200:
+    description: Notification marked as read successfully
+  403:
+    description: Notification does not belong to the user or is not yet active
+  404:
+    description: Notification not found
+  500:
+    description: Internal server error
+

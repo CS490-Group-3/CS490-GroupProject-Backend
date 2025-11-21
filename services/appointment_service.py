@@ -835,6 +835,7 @@ class AppointmentService:
             return data, None
         except Exception as e:
             return None, str(e)
+
     
     @staticmethod
     def get_admin_filtered(salon_id=None, 

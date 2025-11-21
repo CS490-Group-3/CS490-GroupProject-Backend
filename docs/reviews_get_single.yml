@@ -1,0 +1,31 @@
+---
+tags:
+  - Reviews
+summary: Get a full review including images and barber/owner response
+description: >
+  Returns the review, associated images, and optional salon owner or barber response.
+produces:
+  - application/json
+
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: review_id
+    type: string
+    format: uuid
+    required: true
+    description: Review ID
+
+responses:
+  200:
+    description: Full review data returned
+  404:
+    description: Review not found
+  500:
+    description: Internal server error
+

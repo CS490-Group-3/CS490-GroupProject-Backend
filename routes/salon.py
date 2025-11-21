@@ -4,6 +4,7 @@ from middleware.auth import login_required, role_required, get_current_user
 from middleware.notify import notify
 from models.salon import SalonRegisterRequest
 from services.salon_service import SalonService
+from services.promotion_service import PromotionService
 from services.visit_history_service import VisitHistoryService
 from config import supabase
 from flasgger.utils import swag_from
@@ -62,7 +63,7 @@ def get_salon_reviews(salon_id):
 #-----------------------------------1. SALONS (salon owners) 
 
 # Salon registration (requires user auth)
-#@login_required(['salon_owner'])
+#@role_required(['salon_owner'])
 @salon_bp.route("/apply", methods=["POST"], strict_slashes=False)
 @login_required()
 @notify(["admins"],event_type="salon_verification",title="New Salon Application",
@@ -110,7 +111,7 @@ def register_salon():
 
 
 # Salon owner appeals
-#@login_required(['salon_owner'])
+#@role_required(['salon_owner'])
 @salon_bp.route("/<salon_id>/appeal", methods=["PUT"], strict_slashes=False)
 @login_required()
 @notify(["admins"],event_type="salon_verification",title="Salon Appeal submitted",
@@ -144,6 +145,27 @@ def appeal_salon(salon_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+
+@salon_bp.route('/<uuid:salon_id>/promotions', methods=['POST'])
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/salon_promotions.yml")
+def create_promotional_offer(salon_id):
+    """
+    Create a promotional offer for a salon (owner or admin).
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing JSON body"}), 400
+
+    try:
+        result = PromotionService.create_offer(salon_id, data)
+        return jsonify(result), 201
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 
@@ -386,3 +408,4 @@ def add_service_provider():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+

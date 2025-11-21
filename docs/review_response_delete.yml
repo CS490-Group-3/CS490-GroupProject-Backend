@@ -1,0 +1,34 @@
+---
+tags:
+  - Reviews
+summary: Delete a salon owner or barber response to a review
+description: >
+  Allows the **salon_owner** or **assigned barber** who wrote the response  
+  to delete it.
+produces:
+  - application/json
+
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: response_id
+    type: string
+    format: uuid
+    required: true
+    description: ID of the response to delete
+
+responses:
+  200:
+    description: Response deleted successfully
+  403:
+    description: Not authorized
+  404:
+    description: Response not found
+  500:
+    description: Internal server error
+
