@@ -61,6 +61,12 @@ class ScheduleService:
                 start_time = start_time.strftime("%H:%M:%S")
             if isinstance(end_time, time):
                 end_time = end_time.strftime("%H:%M:%S")
+
+            # validate within salon hours
+            ok, err = ScheduleService._is_within_salon_hours(barber_id, day_of_week, start_time, end_time)
+            if not ok:
+                return None, err
+
             data = {
                 "barber_id": barber_id,
                 "day_of_week": day_of_week,
@@ -99,6 +105,26 @@ class ScheduleService:
             Tuple containing the updated availability dict or None, and an error message or None.
         """
         try:
+            # fetch existing to resolve barber_id/day if not passed
+            existing = (
+                supabase.table("barber_availability")
+                .select("barber_id,day_of_week,start_time,end_time")
+                .eq("id", availability_id)
+                .single()
+                .execute()
+            )
+            if getattr(existing, "error", None) or not existing.data:
+                return None, "Availability entry not found"
+
+            barber_id = existing.data["barber_id"]
+            day_of_week = update_data.get("day_of_week", existing.data["day_of_week"])
+            start_time = update_data.get("start_time", existing.data["start_time"])
+            end_time = update_data.get("end_time", existing.data["end_time"])
+
+            if start_time and end_time:
+                ok, err = ScheduleService._is_within_salon_hours(barber_id, day_of_week, start_time, end_time)
+                if not ok:
+                    return None, err
             
             response = supabase.table("barber_availability").update(update_data).eq("id", availability_id).execute()
             if not getattr(response, "data", None):
@@ -129,6 +155,48 @@ class ScheduleService:
         
         except Exception as e:
             return None, str(e)
+
+    @staticmethod
+    def _is_within_salon_hours(barber_id: str, day_of_week: int, start_time: str, end_time: str) -> Tuple[bool, Optional[str]]:
+        """
+        Ensure a barber availability window stays within the salon's hours for that day.
+        """
+        try:
+            barber_resp = (
+                supabase.table("barbers")
+                .select("salon_id")
+                .eq("id", barber_id)
+                .single()
+                .execute()
+            )
+            if getattr(barber_resp, "error", None) or not barber_resp.data:
+                return False, "Barber not found"
+
+            salon_id = barber_resp.data.get("salon_id")
+            hours_resp = (
+                supabase.table("salon_hours")
+                .select("open_time,close_time,is_closed,day_of_week")
+                .eq("salon_id", salon_id)
+                .eq("day_of_week", day_of_week)
+                .single()
+                .execute()
+            )
+            hours = hours_resp.data if not getattr(hours_resp, "error", None) else None
+            if not hours:
+                return False, "Salon hours not configured for that day"
+            if hours.get("is_closed"):
+                return False, "Salon is closed on that day"
+
+            salon_open = hours.get("open_time")
+            salon_close = hours.get("close_time")
+            if not (salon_open and salon_close):
+                return False, "Salon hours missing for that day"
+
+            if start_time < salon_open or end_time > salon_close:
+                return False, f"Availability must be within salon hours ({salon_open} - {salon_close})"
+            return True, None
+        except Exception as e:
+            return False, str(e)
 
     # -------- unavailability / blocking -----------
     @staticmethod
