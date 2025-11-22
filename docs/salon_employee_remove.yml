@@ -1,0 +1,73 @@
+---
+tags:
+  - Salon
+summary: Remove an employee (barber) from a salon
+description: >
+  Removes a barber from a salon. Validates that the salon owner owns the salon
+  and the barber belongs to the salon. This will also remove all service assignments
+  for the barber. Only salon owners and admins may perform this action.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon UUID
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+  - in: path
+    name: barber_id
+    type: string
+    format: uuid
+    required: true
+    description: Barber UUID to remove from the salon
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+responses:
+  200:
+    description: Employee removed successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Employee removed successfully"
+
+  403:
+    description: Forbidden - salon ownership required
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Forbidden: You don't own this salon"
+
+  404:
+    description: Salon or barber not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Barber not found"
+
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred"
+
