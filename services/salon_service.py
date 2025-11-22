@@ -3,6 +3,7 @@ from datetime import datetime, time as dt_time
 from services.upload_file import StorageService
 from zoneinfo import ZoneInfo
 import uuid
+import traceback
 
 class SalonService:
     #------------------------------------helpers
@@ -71,9 +72,6 @@ class SalonService:
         """
         license_url = data.license_url
         logo_url = data.logo_url if hasattr(data, "logo_url") else None
-        hours_payload = [h.model_dump() for h in getattr(data, "hours", [])] if hasattr(data, "hours") else []
-
-
         new = supabase.table("salons").insert({
             "name": data.name,
             "address": data.address,
@@ -89,6 +87,8 @@ class SalonService:
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
         }).execute()
+        if getattr(new, "error", None):
+            raise ValueError(f"salons insert failed: {getattr(new, 'error', None)}")
 
         salon_id = new.data[0]["id"]
 
@@ -107,31 +107,11 @@ class SalonService:
         if updates:
             supabase.table("salons").update(updates).eq("id", salon_id).execute()
 
-        if hours_payload:
-            _, hours_error = SalonService.upsert_salon_hours(salon_id, hours_payload)
-            if hours_error:
-                raise ValueError(f"Failed to save hours: {hours_error}")
-        
-        """
-        admins = supabase.table("user_profiles").select("user_id").eq("role", "admin").execute()
-        for admin in admins.data:
-            supabase.table("notifications").insert({
-                "id": str(uuid.uuid4()),
-                "user_id": admin["user_id"],
-                "notification_type": "salon_verification",
-                "title": "New Salon Registration",
-                "message": f"A new salon '{data.name}' has been submitted for approval.",
-                "status": "pending",
-                "related_id": salon_id,
-                "created_at": datetime.utcnow().isoformat()
-            }).execute()
-        """
         return {
             "message": "Salon registered successfully. Verification required.",
             "salon_name": data.name,
             "salon_id": salon_id,
             "verification_status": "pending",
-            "hours_saved": bool(hours_payload),
         }
 
     @staticmethod
@@ -244,7 +224,7 @@ class SalonService:
         try:
             resp = (
                 supabase.table("salons")
-                .select("id,name,status,created_at,city,state,zip_code")
+                .select("id,name,status,created_at,city,state,zip_code,address,phone,email,description,timezone,logo_url,license_url")
                 .eq("owner_id", owner_id)
                 .order("created_at", desc=True)
                 .limit(1)
@@ -272,8 +252,17 @@ class SalonService:
             if not salon:
                 return None, "Salon not found"
 
-            services, _ = SalonService.get_salon_services(salon_id)
-            employees, _ = SalonService.get_salon_employees(salon_id)
+            services_res = SalonService.get_salon_services(salon_id)
+            if isinstance(services_res, tuple):
+                services, _ = services_res
+            else:
+                services = services_res or []
+
+            employees_res = SalonService.get_salon_employees(salon_id)
+            if isinstance(employees_res, tuple):
+                employees, _ = employees_res
+            else:
+                employees = employees_res or []
 
             hours_resp = (
                 supabase.table("salon_hours")
@@ -305,6 +294,7 @@ class SalonService:
                 "phone": salon.get("phone"),
                 "email": salon.get("email"),
                 "logo_url": salon.get("logo_url"),
+                "license_url": salon.get("license_url"),
                 "status": salon.get("status"),
                 "services": services or [],
                 "employees": employees or [],
@@ -583,14 +573,15 @@ class SalonService:
                 norm_open = SalonService._normalize_time(open_time)
                 norm_close = SalonService._normalize_time(close_time)
 
-            if not is_closed:
-                if not norm_open or not norm_close:
-                    return None, f"open_time and close_time are required for day {day}"
-                if norm_open >= norm_close:
-                    return None, f"open_time must be before close_time for day {day}"
+                if not is_closed:
+                    if not norm_open or not norm_close:
+                        return None, f"open_time and close_time are required for day {day}"
+                    if norm_open >= norm_close:
+                        return None, f"open_time must be before close_time for day {day}"
                 else:
-                    norm_open = None
-                    norm_close = None
+                    # DB has NOT NULL on open_time/close_time; store zeros for closed days
+                    norm_open = "00:00:00"
+                    norm_close = "00:00:00"
 
                 normalized.append({
                     "salon_id": salon_id,
@@ -606,20 +597,25 @@ class SalonService:
                     normalized.append({
                         "salon_id": salon_id,
                         "day_of_week": missing_day,
-                        "open_time": None,
-                        "close_time": None,
+                        "open_time": "00:00:00",
+                        "close_time": "00:00:00",
                         "is_closed": True,
                     })
 
             normalized.sort(key=lambda x: x["day_of_week"])
 
-            supabase.table("salon_hours").delete().eq("salon_id", salon_id).execute()
+            delete_resp = supabase.table("salon_hours").delete().eq("salon_id", salon_id).execute()
+            if getattr(delete_resp, "error", None):
+                print(f"[salon_hours] delete failed for salon_id={salon_id}: {delete_resp.error}")
+                return None, f"salon_hours delete failed: {delete_resp.error}"
             insert_resp = supabase.table("salon_hours").insert(normalized).execute()
             if getattr(insert_resp, "error", None):
-                    return None, str(insert_resp.error)
+                print(f"[salon_hours] insert failed for salon_id={salon_id}: {insert_resp.error} payload_count={len(normalized)} payload={normalized}")
+                return None, f"salon_hours insert failed: {insert_resp.error}"
             return normalized, None
         except Exception as e:
-            return None, str(e)
+            traceback.print_exc()
+            return None, f"salon_hours upsert exception: {e}"
 
     @staticmethod
     def upsert_salon_hour_day(salon_id: str, day_of_week: int, payload: dict):
@@ -643,8 +639,8 @@ class SalonService:
                 if norm_open >= norm_close:
                     return None, "open_time must be before close_time"
             else:
-                norm_open = None
-                norm_close = None
+                norm_open = "00:00:00"
+                norm_close = "00:00:00"
 
             existing = (
                 supabase.table("salon_hours")
@@ -760,11 +756,6 @@ class SalonService:
         if valid_updates:
             valid_updates["updated_at"] = datetime.utcnow().isoformat()
             supabase.table("salons").update(valid_updates).eq("id", salon_id).execute()
-
-        if hours:
-            hours_result, hours_error = SalonService.upsert_salon_hours(salon_id, hours)
-            if hours_error:
-                return {"error": f"Failed to save hours: {hours_error}"}, 400
 
         return {"message": "Application updated successfully", "status": "pending"}, 200
 
