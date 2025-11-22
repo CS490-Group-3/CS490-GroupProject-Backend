@@ -1,0 +1,158 @@
+---
+tags:
+  - Salon
+summary: Get salon details
+description: >
+  Fetches a single salon with services, team members, hours, and rating summary.
+  Requires authentication.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: ID of the salon to retrieve
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+responses:
+  200:
+    description: Salon detail
+    schema:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Fade Masters"
+        description:
+          type: string
+          example: "Trendy fades, beard trims, and line-ups."
+        address:
+          type: string
+          example: "123 Main Street, Newark, NJ, 07102"
+        city:
+          type: string
+          example: "Newark"
+        state:
+          type: string
+          example: "NJ"
+        zip_code:
+          type: string
+          example: "07102"
+        phone:
+          type: string
+          example: "9735551234"
+        email:
+          type: string
+          example: "hello@fademasters.com"
+        logo_url:
+          type: string
+          example: "https://cdn.example.com/logos/fade.png"
+        status:
+          type: string
+          example: "verified"
+        rating:
+          type: number
+          example: 4.7
+        reviews_count:
+          type: integer
+          example: 12
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              salon_id:
+                type: string
+                format: uuid
+              name:
+                type: string
+                example: "Skin Fade"
+              description:
+                type: string
+                example: "Low taper with razor lineup."
+              duration_minutes:
+                type: integer
+                example: 45
+              price:
+                type: number
+                example: 35.0
+              is_active:
+                type: boolean
+                example: true
+        employees:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: "a11b22"
+              user_id:
+                type: string
+                format: uuid
+              name:
+                type: string
+                example: "Jordan Lee"
+              bio:
+                type: string
+                example: "Fade specialist with 8 years of experience."
+              years_experience:
+                type: integer
+                example: 8
+              is_active:
+                type: boolean
+                example: true
+              avatar:
+                type: string
+                example: "https://cdn.example.com/avatars/jordan.png"
+        hours:
+          type: array
+          description: Weekly operating hours
+          items:
+            type: object
+            properties:
+              day_of_week:
+                type: integer
+                example: 1
+              open_time:
+                type: string
+                example: "09:00"
+              close_time:
+                type: string
+                example: "18:00"
+              is_closed:
+                type: boolean
+                example: false
+        gallery:
+          type: array
+          example: []
+  404:
+    description: Salon not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Salon not found"
+  500:
+    description: Unexpected server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Failed to load salon"

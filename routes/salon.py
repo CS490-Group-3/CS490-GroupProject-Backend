@@ -15,6 +15,7 @@ salon_bp.strict_slashes = False
 @salon_bp.route("", methods=["GET"], strict_slashes=False)
 @salon_bp.route("/", methods=["GET"], strict_slashes=False)
 @login_required()
+@swag_from("../docs/salon_list.yml")
 def list_salons():
     """
     Public list of verified salons with optional filters.
@@ -37,6 +38,7 @@ def list_salons():
 
 @salon_bp.route("/<salon_id>", methods=["GET"], strict_slashes=False)
 @login_required()
+@swag_from("../docs/salon_detail.yml")
 def get_salon_detail(salon_id):
     """
     Detailed info for a single salon.
@@ -49,6 +51,7 @@ def get_salon_detail(salon_id):
 
 @salon_bp.route("/<salon_id>/reviews", methods=["GET"], strict_slashes=False)
 @login_required()
+@swag_from("../docs/salon_reviews.yml")
 def get_salon_reviews(salon_id):
     try:
         limit = int(request.args.get("limit", 6))
@@ -245,6 +248,7 @@ def get_salon_status_history(salon_id):
 # Get all services for a salon
 @salon_bp.route("/<salon_id>/services", methods=["GET"], strict_slashes=False)
 @login_required()
+@swag_from("../docs/salon_services.yml")
 def get_salon_services(salon_id):
     """
     Get all services for a salon.
@@ -277,6 +281,7 @@ def get_salon_services(salon_id):
     
 @salon_bp.route("/<salon_id>/employees", methods=["GET"], strict_slashes=False)
 @login_required()
+@swag_from("../docs/salon_employees.yml")
 def get_salon_employees(salon_id):
     """
     Get all service providers (barbers) for a salon.
@@ -291,6 +296,7 @@ def get_salon_employees(salon_id):
     
 @salon_bp.route("/<salon_id>/tags", methods=["GET"], strict_slashes=False)
 @login_required()
+@swag_from("../docs/salon_tags.yml")
 def get_salon_tags(salon_id):
     """
     Get all unique service tags for a salon.
@@ -359,6 +365,7 @@ def get_salon_customer_history(salon_id: str, customer_id: str):
 @salon_bp.route("/provider/search", methods=["GET"])
 @login_required()
 @role_required(['admin', 'salon_owner'])
+@swag_from("../docs/salon_provider_search.yml")
 def search_for_employee():
     """
     Search for service providers (barbers) to add to a salon by email.
@@ -408,4 +415,3 @@ def add_service_provider():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
