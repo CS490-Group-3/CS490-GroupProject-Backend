@@ -77,7 +77,15 @@ def list_appointments():
             # Fetch all appointments
             salons = get_owned_salons()
             salon_ids = [salon['id'] for salon in salons]
-            appointments, error = AppointmentService.get_all_salon_appointments(salon_ids, when, status, page, limit)
+            # If salon_id is provided in query, filter to that salon only
+            if salon_id and salon_id in salon_ids:
+                salon_ids = [salon_id]
+            # If customer_id is provided, filter by customer
+            if customer_id:
+                # Filter appointments by customer_id and salon_ids
+                appointments, error = AppointmentService.get_all_salon_appointments(salon_ids, when, status, page, limit, customer_id=customer_id)
+            else:
+                appointments, error = AppointmentService.get_all_salon_appointments(salon_ids, when, status, page, limit)
         elif user_role == 'barber':
             # fetch appointments for barber
             # must first lookup barber ID with user ID
