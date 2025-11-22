@@ -71,8 +71,9 @@ class AppointmentService:
         """
         dt_utc = datetime.fromisoformat(utc_iso.replace("Z", "+00:00"))
         local = dt_utc.astimezone(ZoneInfo(tz_name))
-        # Python: Sunday=0 ... Saturday=6. Our DB uses 0..6 too.
-        return local.weekday(), local.strftime("%H:%M:%S")
+        # Python weekday(): Monday=0 .. Sunday=6. DB uses Sunday=0 .. Saturday=6.
+        dow = (local.weekday() + 1) % 7  # shift so Sunday=0
+        return dow, local.strftime("%H:%M:%S")
 
     @staticmethod
     def has_overlap(salon_id: str, barber_id: str, start_at, end_at, exclude_id: Optional[str] = None) -> bool:
@@ -135,7 +136,7 @@ class AppointmentService:
         if salon_ids:
             resp = (
                 supabase.table("salons")
-                .select("id,name,address,city,state,zip_code,phone,logo_url")
+                .select("id,name,address,city,state,zip_code,phone,logo_url,timezone")
                 .in_("id", list(salon_ids))
                 .execute()
             )
@@ -146,6 +147,7 @@ class AppointmentService:
                     "address": f"{row.get('address','')}, {row.get('city','')}, {row.get('state','')} {row.get('zip_code','')}".replace(" ,", ",").strip(" ,"),
                     "phone": row.get("phone"),
                     "logo_url": row.get("logo_url"),
+                    "timezone": row.get("timezone"),
                 }
 
         services = {}
@@ -645,7 +647,8 @@ class AppointmentService:
             if error:
                 return None, error
             duration_minutes = int(service.get("duration_minutes") or 30)
-            slot_length = timedelta(minutes=duration_minutes)
+            service_length = timedelta(minutes=duration_minutes)
+            step = timedelta(minutes=15)  # expose 15-min selectable grid
 
             tz_name = AppointmentService._get_salon_timezone(salon_id)
             tz = ZoneInfo(tz_name)
@@ -657,7 +660,7 @@ class AppointmentService:
             day_start_local = datetime.combine(day_local.date(), time(0, 0), tz)
             day_end_local = day_start_local + timedelta(days=1)
 
-            dow = day_local.weekday()
+            dow = (day_local.weekday() + 1) % 7  # shift to Sunday=0 .. Saturday=6
             availability = (
                 supabase.table("barber_availability")
                 .select("start_time,end_time,is_active")
@@ -720,24 +723,24 @@ class AppointmentService:
                 window_start = datetime.combine(day_local.date(), start_time, tz)
                 window_end = datetime.combine(day_local.date(), end_time, tz)
                 current = window_start
-                while current + slot_length <= window_end:
+                while current + service_length <= window_end:
                     slot_start_utc = current.astimezone(timezone.utc)
-                    slot_end_utc = (current + slot_length).astimezone(timezone.utc)
+                    slot_end_utc = (current + service_length).astimezone(timezone.utc)
                     if slot_start_utc < now_utc:
-                        current += slot_length
+                        current += step
                         continue
                     if any(u_start < slot_end_utc and u_end > slot_start_utc for u_start, u_end in unavail):
-                        current += slot_length
+                        current += step
                         continue
                     if any(b_start < slot_end_utc and b_end > slot_start_utc for b_start, b_end in booked):
-                        current += slot_length
+                        current += step
                         continue
                     slots.append({
                         "start_at": slot_start_utc.isoformat(),
                         "end_at": slot_end_utc.isoformat(),
                         "label": current.strftime("%I:%M %p").lstrip("0") or current.strftime("%H:%M"),
                     })
-                    current += slot_length
+                    current += step
             return slots, None
         except Exception as e:
             return None, str(e)
