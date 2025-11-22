@@ -56,6 +56,14 @@ parameters:
     type: string
     example: Trendy barbershop offering cuts, fades, and beard trims.
   - in: formData
+    name: hours
+    type: string
+    required: true
+    description: >
+      JSON string array of weekly hours. 0 = Sunday ... 6 = Saturday.  
+      Omitted days are auto-set to `is_closed: true`.  
+      Example: `[{"day_of_week":1,"open_time":"09:00","close_time":"18:00","is_closed":false}, {"day_of_week":0,"is_closed":true}]`
+  - in: formData
     name: logo
     type: file
     description: Optional salon logo
@@ -63,6 +71,67 @@ parameters:
     name: license
     type: file
     description: Optional license upload
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required:
+        - name
+        - address
+        - hours
+      properties:
+        name:
+          type: string
+          example: Swag Shop
+        address:
+          type: string
+          example: 123 Main Street
+        city:
+          type: string
+          example: Newark
+        state:
+          type: string
+          example: NJ
+        zip_code:
+          type: string
+          example: "07102"
+        timezone:
+          type: string
+          example: "America/New_York"
+        phone:
+          type: string
+          example: "9735551234"
+        email:
+          type: string
+          example: owner@swagshop.com
+        description:
+          type: string
+          example: Trendy barbershop offering cuts, fades, and beard trims.
+        license_url:
+          type: string
+          example: "https://cdn.example.com/license.pdf"
+        hours:
+          type: array
+          description: Weekly schedule entries (0 = Sunday ... 6 = Saturday). Omitted days are auto-set to closed.
+          items:
+            type: object
+            required: [day_of_week, is_closed]
+            properties:
+              day_of_week:
+                type: integer
+                example: 1
+              open_time:
+                type: string
+                description: Required when `is_closed` is false
+                example: "09:00"
+              close_time:
+                type: string
+                description: Required when `is_closed` is false
+                example: "18:00"
+              is_closed:
+                type: boolean
+                example: false
 
 responses:
   201:
@@ -73,18 +142,18 @@ responses:
         message:
           type: string
           example: "Salon registered successfully"
-        salon:
-          type: object
-          properties:
-            id:
-              type: string
-              example: "b534633a-23bc-4479-968f-8a004615821c"
-            name:
-              type: string
-              example: "Swag Shop"
-            status:
-              type: string
-              example: "pending"
+        hours_saved:
+          type: boolean
+          example: true
+        salon_name:
+          type: string
+          example: "Swag Shop"
+        salon_id:
+          type: string
+          example: "b534633a-23bc-4479-968f-8a004615821c"
+        verification_status:
+          type: string
+          example: "pending"
   400:
     description: Validation failed or missing contact info
     schema:
@@ -109,4 +178,3 @@ responses:
         error:
           type: string
           example: "Unexpected error occurred while registering salon."
-

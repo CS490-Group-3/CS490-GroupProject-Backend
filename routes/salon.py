@@ -79,12 +79,24 @@ def register_salon():
     try:
         if request.content_type and "multipart/form-data" in request.content_type:
             form = request.form.to_dict()
+            hours_raw = request.form.get("hours")
+            if hours_raw:
+                try:
+                    form["hours"] = json.loads(hours_raw)
+                except json.JSONDecodeError:
+                    return jsonify({"error": "Invalid JSON for hours"}), 400
             parsed = SalonRegisterRequest(**form)
             logo_file = request.files.get("logo")
             license_file = request.files.get("license")
         else:
 
             data = request.get_json() or {}
+            hours_raw = data.get("hours")
+            if isinstance(hours_raw, str):
+                try:
+                    data["hours"] = json.loads(hours_raw)
+                except json.JSONDecodeError:
+                    return jsonify({"error": "Invalid JSON for hours"}), 400
             parsed = SalonRegisterRequest(**data)
             logo_file = None
             license_file = None
@@ -106,6 +118,8 @@ def register_salon():
 
     except ValidationError as e:
         return jsonify({"error": "Validation failed","details": [str(err) for err in e.errors()]}), 400
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

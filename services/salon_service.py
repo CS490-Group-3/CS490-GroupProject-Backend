@@ -71,6 +71,7 @@ class SalonService:
         """
         license_url = data.license_url
         logo_url = data.logo_url if hasattr(data, "logo_url") else None
+        hours_payload = [h.model_dump() for h in getattr(data, "hours", [])] if hasattr(data, "hours") else []
 
 
         new = supabase.table("salons").insert({
@@ -100,9 +101,16 @@ class SalonService:
 
         if logo_file:
             updates["logo_url"] = StorageService.upload_file(logo_file, salon_id, "logo")
+        elif logo_url:
+            updates["logo_url"] = logo_url
 
         if updates:
             supabase.table("salons").update(updates).eq("id", salon_id).execute()
+
+        if hours_payload:
+            _, hours_error = SalonService.upsert_salon_hours(salon_id, hours_payload)
+            if hours_error:
+                raise ValueError(f"Failed to save hours: {hours_error}")
         
         """
         admins = supabase.table("user_profiles").select("user_id").eq("role", "admin").execute()
@@ -118,7 +126,13 @@ class SalonService:
                 "created_at": datetime.utcnow().isoformat()
             }).execute()
         """
-        return {"message": "Salon registered successfully", "salon_name": data.name, "salon_id": salon_id,  "verification_status": "pending"}
+        return {
+            "message": "Salon registered successfully. Verification required.",
+            "salon_name": data.name,
+            "salon_id": salon_id,
+            "verification_status": "pending",
+            "hours_saved": bool(hours_payload),
+        }
 
     @staticmethod
     def list_salons(search=None, location=None, service_names=None, sort="top"):
@@ -550,11 +564,11 @@ class SalonService:
                 norm_open = SalonService._normalize_time(open_time)
                 norm_close = SalonService._normalize_time(close_time)
 
-                if not is_closed:
-                    if not norm_open or not norm_close:
-                        return None, f"open_time and close_time are required for day {day}"
-                    if norm_open >= norm_close:
-                        return None, f"open_time must be before close_time for day {day}"
+            if not is_closed:
+                if not norm_open or not norm_close:
+                    return None, f"open_time and close_time are required for day {day}"
+                if norm_open >= norm_close:
+                    return None, f"open_time must be before close_time for day {day}"
                 else:
                     norm_open = None
                     norm_close = None
@@ -566,6 +580,17 @@ class SalonService:
                     "close_time": norm_close,
                     "is_closed": is_closed,
                 })
+
+            # Auto-fill any missing days as closed
+            for missing_day in range(7):
+                if missing_day not in seen_days:
+                    normalized.append({
+                        "salon_id": salon_id,
+                        "day_of_week": missing_day,
+                        "open_time": None,
+                        "close_time": None,
+                        "is_closed": True,
+                    })
 
             normalized.sort(key=lambda x: x["day_of_week"])
 

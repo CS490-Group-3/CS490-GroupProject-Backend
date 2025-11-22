@@ -4,7 +4,8 @@ tags:
 summary: Create or replace salon business hours
 description: >
   Allows **salon owners** or **admins** to set weekly hours for a salon.  
-  Replaces all existing rows in `salon_hours` for the salon with the provided schedule.
+  Replaces all existing rows in `salon_hours` for the salon with the provided schedule.  
+  Any omitted days are automatically set to `is_closed: true`.
 consumes:
   - application/json
 produces:
