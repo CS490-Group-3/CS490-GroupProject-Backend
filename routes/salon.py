@@ -7,8 +7,10 @@ from services.salon_service import SalonService
 from services.promotion_service import PromotionService
 from services.visit_history_service import VisitHistoryService
 from services.auth_service import AuthService
+from services.schedule_service import ScheduleService
 from config import supabase
 from flasgger.utils import swag_from
+from datetime import time
 
 salon_bp = Blueprint("salon_bp", __name__, url_prefix="/api/salons")
 salon_bp.strict_slashes = False
@@ -725,5 +727,272 @@ def get_barber_services(salon_id, barber_id):
         
         return jsonify({"services": services}), 200
         
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+#---------------------------------------6. SALON MANAGEMENT (verified salons)
+
+@salon_bp.route("/<salon_id>", methods=["PATCH"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/salon_update.yml")
+def update_verified_salon(salon_id):
+    """
+    Update a verified salon's details.
+    """
+    try:
+        user = get_current_user()
+        user_id = user.get("sub")
+        role = user.get("role")
+        
+        # Verify salon ownership for salon_owner
+        if role == "salon_owner":
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return jsonify({"error": "Salon not found"}), 404
+            
+            if str(salon_resp.data.get("owner_id")) != str(user_id):
+                return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+        
+        if request.content_type and "multipart/form-data" in request.content_type:
+            body = request.form.to_dict()
+            logo_file = request.files.get("logo")
+        else:
+            body = request.get_json() or {}
+            logo_file = None
+        
+        updates = body.copy()
+        
+        result, error = SalonService.update_verified_salon(
+            salon_id,
+            user_id,
+            updates=updates,
+            logo_file=logo_file
+        )
+        
+        if error:
+            status_code = 403 if "Forbidden" in error else 404
+            return jsonify({"error": error}), status_code
+        
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@salon_bp.route("/<salon_id>/employees/<barber_id>", methods=["DELETE"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/salon_employee_remove.yml")
+def remove_employee(salon_id, barber_id):
+    """
+    Remove an employee (barber) from a salon.
+    """
+    try:
+        user = get_current_user()
+        user_id = user.get("sub")
+        role = user.get("role")
+        
+        # Verify salon ownership for salon_owner
+        if role == "salon_owner":
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return jsonify({"error": "Salon not found"}), 404
+            
+            if str(salon_resp.data.get("owner_id")) != str(user_id):
+                return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+        
+        result, error = SalonService.remove_employee(salon_id, barber_id, user_id)
+        
+        if error:
+            status_code = 403 if "Forbidden" in error else 404
+            return jsonify({"error": error}), status_code
+        
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@salon_bp.route("/<salon_id>/customers", methods=["GET"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/salon_customers.yml")
+def get_salon_customers(salon_id):
+    """
+    Get all customers for a salon, sorted by visit count.
+    """
+    try:
+        user = get_current_user()
+        user_id = user.get("sub")
+        role = user.get("role")
+        
+        # Verify salon ownership for salon_owner
+        if role == "salon_owner":
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return jsonify({"error": "Salon not found"}), 404
+            
+            if str(salon_resp.data.get("owner_id")) != str(user_id):
+                return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+        
+        customers, error = SalonService.get_salon_customers(salon_id, user_id)
+        
+        if error:
+            status_code = 403 if "Forbidden" in error else 404
+            return jsonify({"error": error}), status_code
+        
+        return jsonify({"customers": customers}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@salon_bp.route("/<salon_id>/employees/<barber_id>", methods=["PATCH"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/salon_employee_update.yml")
+def update_employee(salon_id, barber_id):
+    """
+    Update an employee's (barber's) information (bio, years_experience, is_active).
+    """
+    try:
+        user = get_current_user()
+        user_id = user.get("sub")
+        role = user.get("role")
+        
+        # Verify salon ownership for salon_owner
+        if role == "salon_owner":
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return jsonify({"error": "Salon not found"}), 404
+            
+            if str(salon_resp.data.get("owner_id")) != str(user_id):
+                return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+        
+        json_data = request.get_json() or {}
+        result, error = SalonService.update_employee(salon_id, barber_id, user_id, json_data)
+        
+        if error:
+            status_code = 403 if "Forbidden" in error else 404
+            return jsonify({"error": error}), status_code
+        
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@salon_bp.route("/<salon_id>/employees/<barber_id>/availability", methods=["GET"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/salon_employee_availability_get.yml")
+def get_employee_availability(salon_id, barber_id):
+    """
+    Get a barber's availability. Salon owners can view their employees' schedules.
+    """
+    try:
+        user = get_current_user()
+        user_id = user.get("sub")
+        role = user.get("role")
+        
+        # Verify salon ownership for salon_owner
+        if role == "salon_owner":
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return jsonify({"error": "Salon not found"}), 404
+            
+            if str(salon_resp.data.get("owner_id")) != str(user_id):
+                return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+            
+            # Verify barber belongs to salon
+            barber_resp = supabase.table("barbers").select("id,salon_id").eq("id", barber_id).single().execute()
+            if getattr(barber_resp, "error", None) or not barber_resp.data:
+                return jsonify({"error": "Barber not found"}), 404
+            
+            if str(barber_resp.data.get("salon_id")) != str(salon_id):
+                return jsonify({"error": "Barber does not belong to this salon"}), 403
+        
+        result, error = ScheduleService.get_availability(barber_id=barber_id)
+        
+        if error:
+            return jsonify({"error": error}), 400
+        
+        return jsonify({"availability": result}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@salon_bp.route("/<salon_id>/employees/<barber_id>/availability", methods=["POST", "PATCH"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/salon_employee_availability_set.yml")
+def set_employee_availability(salon_id, barber_id):
+    """
+    Set or update a barber's availability. Salon owners can set their employees' schedules.
+    Availability must be within salon hours.
+    """
+    try:
+        user = get_current_user()
+        user_id = user.get("sub")
+        role = user.get("role")
+        
+        # Verify salon ownership for salon_owner
+        if role == "salon_owner":
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return jsonify({"error": "Salon not found"}), 404
+            
+            if str(salon_resp.data.get("owner_id")) != str(user_id):
+                return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+            
+            # Verify barber belongs to salon
+            barber_resp = supabase.table("barbers").select("id,salon_id").eq("id", barber_id).single().execute()
+            if getattr(barber_resp, "error", None) or not barber_resp.data:
+                return jsonify({"error": "Barber not found"}), 404
+            
+            if str(barber_resp.data.get("salon_id")) != str(salon_id):
+                return jsonify({"error": "Barber does not belong to this salon"}), 403
+        
+        json_data = request.get_json()
+        if not json_data:
+            return jsonify({"error": "Invalid JSON body"}), 400
+        
+        availabilities = json_data.get('availability')
+        if not availabilities:
+            return jsonify({"error": "Missing 'availability' in request body"}), 400
+        
+        from models.schedule import BarberAvailabilityCreateRequest, BarberAvailabilityUpdateRequest
+        
+        if request.method == "POST":
+            # Create new availability
+            for availability in availabilities:
+                data = BarberAvailabilityCreateRequest(**availability)
+                result, error = ScheduleService.create_availability(
+                    barber_id=barber_id,
+                    day_of_week=data.day_of_week,
+                    start_time=data.start_time,
+                    end_time=data.end_time,
+                    is_active=data.is_active
+                )
+                if error:
+                    return jsonify({"error": error}), 400
+            return jsonify({"message": "Availability created successfully"}), 201
+        else:
+            # Update existing availability
+            for availability in availabilities:
+                data = BarberAvailabilityUpdateRequest(**availability)
+                if isinstance(data.start_time, time):
+                    start_time = data.start_time.strftime("%H:%M:%S")
+                else:
+                    start_time = data.start_time
+                if isinstance(data.end_time, time):
+                    end_time = data.end_time.strftime("%H:%M:%S")
+                else:
+                    end_time = data.end_time
+                update = {
+                    "day_of_week": data.day_of_week,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "is_active": data.is_active
+                }
+                result, error = ScheduleService.update_availability(
+                    availability_id=data.id,
+                    update_data=update
+                )
+                if error:
+                    return jsonify({"error": error}), 400
+            return jsonify({"message": "Availability updated successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
