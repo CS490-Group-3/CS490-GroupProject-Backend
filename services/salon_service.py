@@ -309,7 +309,7 @@ class SalonService:
     @staticmethod
     def list_reviews(salon_id, limit=6):
         """
-        Return latest reviews for a salon.
+        Return latest reviews for a salon, including responses.
         """
         try:
             response = (
@@ -332,10 +332,22 @@ class SalonService:
                 )
                 profiles = {row["id"]: row for row in (prof.data or [])}
 
+            # Fetch responses for all reviews
+            review_ids = [row["id"] for row in reviews if row.get("id")]
+            responses = {}
+            if review_ids:
+                responses_resp = (
+                    supabase.table("review_responses")
+                    .select("*")
+                    .in_("review_id", review_ids)
+                    .execute()
+                )
+                responses = {r["review_id"]: r for r in (responses_resp.data or [])}
+
             output = []
             for row in reviews:
                 profile = profiles.get(row.get("user_id"), {})
-                output.append({
+                review_data = {
                     "id": row.get("id"),
                     "stars": row.get("rating"),
                     "text": row.get("comment"),
@@ -343,7 +355,11 @@ class SalonService:
                     "user": {
                         "name": f"{profile.get('first_name','')} {profile.get('last_name','')}".strip() or "Guest"
                     }
-                })
+                }
+                # Attach response if it exists
+                if row.get("id") in responses:
+                    review_data["response"] = responses[row.get("id")]
+                output.append(review_data)
             return output, None
         except Exception as e:
             return None, str(e)
@@ -989,6 +1005,275 @@ class SalonService:
                     services.append(service_data)
             
             return services, None
+            
+        except Exception as e:
+            return None, str(e)
+    
+    @staticmethod
+    def update_verified_salon(salon_id: str, owner_id: str, updates=None, logo_file=None):
+        """
+        Update a verified salon's details. Allows updating name, description, address, phone, email, logo.
+        """
+        try:
+            # Verify salon ownership
+            salon_resp = supabase.table("salons").select("owner_id,status").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return None, "Salon not found"
+            
+            salon = salon_resp.data
+            if str(salon.get("owner_id")) != str(owner_id):
+                return None, "Forbidden: You don't own this salon"
+            
+            if salon.get("status") != "verified":
+                return None, "Only verified salons can be updated through this endpoint"
+            
+            allowed_fields = ["name", "description", "address", "city", "state", "zip_code", "phone", "email"]
+            valid_updates = {k: v for k, v in (updates or {}).items() if k in allowed_fields and v is not None}
+            
+            if logo_file:
+                from services.storage_service import StorageService
+                valid_updates["logo_url"] = StorageService.upload_file(logo_file, salon_id, "logo")
+            
+            if valid_updates:
+                valid_updates["updated_at"] = datetime.utcnow().isoformat()
+                supabase.table("salons").update(valid_updates).eq("id", salon_id).execute()
+            
+            return {"message": "Salon updated successfully"}, None
+            
+        except Exception as e:
+            return None, str(e)
+    
+    @staticmethod
+    def update_service(service_id: str, salon_id: str, owner_id: str, updates=None):
+        """
+        Update a service. Validates salon ownership and service belongs to salon.
+        """
+        try:
+            # Verify salon ownership
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return None, "Salon not found"
+            
+            if str(salon_resp.data.get("owner_id")) != str(owner_id):
+                return None, "Forbidden: You don't own this salon"
+            
+            # Verify service belongs to salon
+            service_resp = supabase.table("services").select("id,salon_id").eq("id", service_id).single().execute()
+            if getattr(service_resp, "error", None) or not service_resp.data:
+                return None, "Service not found"
+            
+            if str(service_resp.data.get("salon_id")) != str(salon_id):
+                return None, "Service does not belong to this salon"
+            
+            allowed_fields = ["name", "description", "duration_minutes", "price", "is_active"]
+            valid_updates = {k: v for k, v in (updates or {}).items() if k in allowed_fields and v is not None}
+            
+            if valid_updates:
+                supabase.table("services").update(valid_updates).eq("id", service_id).execute()
+            
+            return {"message": "Service updated successfully"}, None
+            
+        except Exception as e:
+            return None, str(e)
+    
+    @staticmethod
+    def delete_service(service_id: str, salon_id: str, owner_id: str):
+        """
+        Delete a service. Validates salon ownership and service belongs to salon.
+        """
+        try:
+            # Verify salon ownership
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return None, "Salon not found"
+            
+            if str(salon_resp.data.get("owner_id")) != str(owner_id):
+                return None, "Forbidden: You don't own this salon"
+            
+            # Verify service belongs to salon
+            service_resp = supabase.table("services").select("id,salon_id").eq("id", service_id).single().execute()
+            if getattr(service_resp, "error", None) or not service_resp.data:
+                return None, "Service not found"
+            
+            if str(service_resp.data.get("salon_id")) != str(salon_id):
+                return None, "Service does not belong to this salon"
+            
+            # Delete service
+            supabase.table("services").delete().eq("id", service_id).execute()
+            
+            return {"message": "Service deleted successfully"}, None
+            
+        except Exception as e:
+            return None, str(e)
+    
+    @staticmethod
+    def remove_employee(salon_id: str, barber_id: str, owner_id: str):
+        """
+        Remove an employee (barber) from a salon. Validates salon ownership and barber belongs to salon.
+        """
+        try:
+            # Verify salon ownership
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return None, "Salon not found"
+            
+            if str(salon_resp.data.get("owner_id")) != str(owner_id):
+                return None, "Forbidden: You don't own this salon"
+            
+            # Verify barber belongs to salon
+            barber_resp = supabase.table("barbers").select("id,salon_id").eq("id", barber_id).single().execute()
+            if getattr(barber_resp, "error", None) or not barber_resp.data:
+                return None, "Barber not found"
+            
+            if str(barber_resp.data.get("salon_id")) != str(salon_id):
+                return None, "Barber does not belong to this salon"
+            
+            # Delete barber (this will cascade delete barber_services)
+            supabase.table("barbers").delete().eq("id", barber_id).execute()
+            
+            return {"message": "Employee removed successfully"}, None
+            
+        except Exception as e:
+            return None, str(e)
+    
+    @staticmethod
+    def update_employee(salon_id: str, barber_id: str, owner_id: str, updates: dict):
+        """
+        Update an employee's (barber's) information. Validates salon ownership and barber belongs to salon.
+        """
+        try:
+            # Verify salon ownership
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return None, "Salon not found"
+            
+            if str(salon_resp.data.get("owner_id")) != str(owner_id):
+                return None, "Forbidden: You don't own this salon"
+            
+            # Verify barber belongs to salon
+            barber_resp = supabase.table("barbers").select("id,salon_id").eq("id", barber_id).single().execute()
+            if getattr(barber_resp, "error", None) or not barber_resp.data:
+                return None, "Barber not found"
+            
+            if str(barber_resp.data.get("salon_id")) != str(salon_id):
+                return None, "Barber does not belong to this salon"
+            
+            # Build update dict (only include provided fields)
+            update_data = {}
+            if "bio" in updates:
+                update_data["bio"] = updates["bio"]
+            if "years_experience" in updates:
+                update_data["years_experience"] = updates["years_experience"]
+            if "is_active" in updates:
+                update_data["is_active"] = updates["is_active"]
+            
+            if not update_data:
+                return None, "No valid fields to update"
+            
+            # Update barber
+            updated = supabase.table("barbers").update(update_data).eq("id", barber_id).execute()
+            
+            if getattr(updated, "error", None) or not updated.data:
+                return None, "Failed to update barber"
+            
+            return updated.data[0], None
+            
+        except Exception as e:
+            return None, str(e)
+    
+    @staticmethod
+    def get_salon_customers(salon_id: str, owner_id: str):
+        """
+        Get all customers who have appointments at a salon, sorted by visit count (completed appointments).
+        Returns customer info with visit count.
+        """
+        try:
+            # Verify salon ownership
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return None, "Salon not found"
+            
+            if str(salon_resp.data.get("owner_id")) != str(owner_id):
+                return None, "Forbidden: You don't own this salon"
+            
+            # Get all appointments for this salon (all statuses to get all customers)
+            appointments_resp = (
+                supabase.table("appointments")
+                .select("customer_id,id,start_at,status")
+                .eq("salon_id", salon_id)
+                .execute()
+            )
+            appointments = appointments_resp.data or []
+            
+            # Count completed visits per customer (for sorting)
+            customer_visit_counts = {}
+            customer_ids_set = set()
+            for apt in appointments:
+                customer_id = apt.get("customer_id")
+                if customer_id:
+                    customer_ids_set.add(customer_id)
+                    # Only count completed appointments as visits
+                    if apt.get("status") == "completed":
+                        customer_visit_counts[customer_id] = customer_visit_counts.get(customer_id, 0) + 1
+            
+            # Get unique customer IDs (all customers, not just those with completed appointments)
+            customer_ids = list(customer_ids_set)
+            
+            if not customer_ids:
+                return [], None
+            
+            # Get customer profiles - try user_details first (has email), fallback to user_profiles
+            profiles = {}
+            try:
+                profiles_resp = (
+                    supabase.table("user_details")
+                    .select("id,first_name,last_name,email,profile_image_url")
+                    .in_("id", customer_ids)
+                    .execute()
+                )
+                for row in profiles_resp.data or []:
+                    profiles[row["id"]] = {
+                        "first_name": row.get("first_name"),
+                        "last_name": row.get("last_name"),
+                        "email": row.get("email"),
+                        "profile_image_url": row.get("profile_image_url"),
+                    }
+            except Exception:
+                # Fallback to user_profiles if user_details doesn't work
+                try:
+                    profiles_resp = (
+                        supabase.table("user_profiles")
+                        .select("user_id,first_name,last_name,profile_image_url")
+                        .in_("user_id", customer_ids)
+                        .execute()
+                    )
+                    for row in profiles_resp.data or []:
+                        profiles[row["user_id"]] = {
+                            "first_name": row.get("first_name"),
+                            "last_name": row.get("last_name"),
+                            "email": None,  # user_profiles doesn't have email
+                            "profile_image_url": row.get("profile_image_url"),
+                        }
+                except Exception:
+                    pass
+            
+            # Build customer list with visit counts
+            customers = []
+            for user_id in customer_ids:
+                profile = profiles.get(user_id, {})
+                customers.append({
+                    "user_id": user_id,
+                    "first_name": profile.get("first_name"),
+                    "last_name": profile.get("last_name"),
+                    "email": profile.get("email"),
+                    "profile_image_url": profile.get("profile_image_url"),
+                    "visit_count": customer_visit_counts.get(user_id, 0)
+                })
+            
+            # Sort by visit count (descending)
+            customers.sort(key=lambda x: x["visit_count"], reverse=True)
+            
+            return customers, None
             
         except Exception as e:
             return None, str(e)
