@@ -451,8 +451,12 @@ def get_salon_services(salon_id):
         if not json_data.get("search"):
             json_data["search"] = ""
         result = SalonService.get_salon_services(salon_id, json_data)
-        if result[0] is None:
-            return jsonify({"error": result[1]}), 404
+        if isinstance(result, tuple):
+            services, error = result
+            if error:
+                return jsonify({"error": error}), 404
+            return jsonify({"services": services}), 200
+        # If result is not a tuple, it's the services list directly
         return jsonify({"services": result}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
