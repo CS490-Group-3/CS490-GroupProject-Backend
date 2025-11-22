@@ -244,6 +244,122 @@ def get_salon_status_history(salon_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@salon_bp.route("/<salon_id>/hours", methods=["GET"], strict_slashes=False)
+@login_required()
+@role_required(['admin', 'salon_owner'])
+@swag_from("../docs/salon_hours_get.yml")
+def get_salon_hours(salon_id):
+    """
+    Get weekly hours for a salon (owner/admin only).
+    """
+    try:
+        user = g.user or {}
+        role = user.get("role")
+        user_id = user.get("sub")
+
+        salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+        if getattr(salon_resp, "error", None) or not salon_resp.data:
+            return jsonify({"error": "Salon not found"}), 404
+
+        if role == "salon_owner" and str(salon_resp.data.get("owner_id")) != str(user_id):
+            return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+
+        hours, error = SalonService.get_salon_hours(salon_id)
+        if error:
+            return jsonify({"error": error}), 400
+        return jsonify({"hours": hours}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@salon_bp.route("/<salon_id>/hours", methods=["PUT"], strict_slashes=False)
+@login_required()
+@role_required(['admin', 'salon_owner'])
+@swag_from("../docs/salon_hours_update.yml")
+def update_salon_hours(salon_id):
+    """
+    Create or replace weekly hours for a salon.
+    """
+    try:
+        user = g.user or {}
+        user_id = user.get("sub")
+        role = user.get("role")
+
+        salon_resp = supabase.table("salons").select("owner_id,name").eq("id", salon_id).single().execute()
+        if getattr(salon_resp, "error", None) or not salon_resp.data:
+            return jsonify({"error": "Salon not found"}), 404
+
+        owner_id = salon_resp.data.get("owner_id")
+        if role == "salon_owner" and str(owner_id) != str(user_id):
+            return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+
+        body = request.get_json() or {}
+        hours = body.get("hours")
+        if hours is None:
+            return jsonify({"error": "Missing 'hours' in request body"}), 400
+
+        result, error = SalonService.upsert_salon_hours(salon_id, hours)
+        if error:
+            return jsonify({"error": error}), 400
+
+        return jsonify({"message": "Salon hours saved", "hours": result}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@salon_bp.route("/<salon_id>/hours/<int:day_of_week>", methods=["PATCH"], strict_slashes=False)
+@login_required()
+@role_required(['admin', 'salon_owner'])
+@swag_from("../docs/salon_hours_patch.yml")
+def update_salon_hour_day(salon_id, day_of_week):
+    """
+    Update or create hours for a single day.
+    """
+    try:
+        user = g.user or {}
+        user_id = user.get("sub")
+        role = user.get("role")
+
+        salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+        if getattr(salon_resp, "error", None) or not salon_resp.data:
+            return jsonify({"error": "Salon not found"}), 404
+        if role == "salon_owner" and str(salon_resp.data.get("owner_id")) != str(user_id):
+            return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+
+        body = request.get_json() or {}
+        result, error = SalonService.upsert_salon_hour_day(salon_id, day_of_week, body)
+        if error:
+            return jsonify({"error": error}), 400
+        return jsonify({"message": "Salon day hours saved", "hours": result}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@salon_bp.route("/<salon_id>/hours/<int:day_of_week>", methods=["DELETE"], strict_slashes=False)
+@login_required()
+@role_required(['admin', 'salon_owner'])
+@swag_from("../docs/salon_hours_delete.yml")
+def delete_salon_hour_day(salon_id, day_of_week):
+    """
+    Delete hours for a single day.
+    """
+    try:
+        user = g.user or {}
+        user_id = user.get("sub")
+        role = user.get("role")
+
+        salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+        if getattr(salon_resp, "error", None) or not salon_resp.data:
+            return jsonify({"error": "Salon not found"}), 404
+        if role == "salon_owner" and str(salon_resp.data.get("owner_id")) != str(user_id):
+            return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+
+        _, error = SalonService.delete_salon_hour_day(salon_id, day_of_week)
+        if error:
+            return jsonify({"error": error}), 400
+        return jsonify({"message": "Salon day hours deleted"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ---------------------------------------3. GET SALON DATA
 # Get all services for a salon
 @salon_bp.route("/<salon_id>/services", methods=["GET"], strict_slashes=False)

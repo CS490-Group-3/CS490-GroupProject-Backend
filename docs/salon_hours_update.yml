@@ -1,0 +1,147 @@
+---
+tags:
+  - Salon
+summary: Create or replace salon business hours
+description: >
+  Allows **salon owners** or **admins** to set weekly hours for a salon.  
+  Replaces all existing rows in `salon_hours` for the salon with the provided schedule.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon ID whose hours will be updated
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required: [hours]
+      properties:
+        hours:
+          type: array
+          description: >
+            Weekly schedule entries. For open days, `open_time` and `close_time` are required (24h format HH:MM or HH:MM:SS).
+            For closed days, set `is_closed` to true.
+          items:
+            type: object
+            required: [day_of_week, is_closed]
+            properties:
+              day_of_week:
+                type: integer
+                description: 0 = Sunday ... 6 = Saturday
+                example: 1
+              open_time:
+                type: string
+                description: Required when is_closed is false
+                example: "09:00"
+              close_time:
+                type: string
+                description: Required when is_closed is false
+                example: "18:00"
+              is_closed:
+                type: boolean
+                description: True if the salon is closed for the day
+                example: false
+    example:
+      hours:
+        - day_of_week: 0
+          is_closed: true
+        - day_of_week: 1
+          open_time: "09:00"
+          close_time: "18:00"
+          is_closed: false
+        - day_of_week: 2
+          open_time: "09:00"
+          close_time: "18:00"
+          is_closed: false
+        - day_of_week: 3
+          open_time: "09:00"
+          close_time: "18:00"
+          is_closed: false
+        - day_of_week: 4
+          open_time: "09:00"
+          close_time: "18:00"
+          is_closed: false
+        - day_of_week: 5
+          open_time: "09:00"
+          close_time: "20:00"
+          is_closed: false
+        - day_of_week: 6
+          open_time: "10:00"
+          close_time: "16:00"
+          is_closed: false
+
+responses:
+  200:
+    description: Hours saved successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Salon hours saved"
+        hours:
+          type: array
+          items:
+            type: object
+            properties:
+              salon_id:
+                type: string
+                format: uuid
+              day_of_week:
+                type: integer
+              open_time:
+                type: string
+                example: "09:00:00"
+              close_time:
+                type: string
+                example: "18:00:00"
+              is_closed:
+                type: boolean
+                example: false
+  400:
+    description: Validation error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "open_time and close_time are required for day 1"
+  403:
+    description: Forbidden for non-owners
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Forbidden: You don't own this salon"
+  404:
+    description: Salon not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Salon not found"
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Database connection failed"

@@ -1,5 +1,5 @@
 from config import supabase
-from datetime import datetime
+from datetime import datetime, time as dt_time
 from services.upload_file import StorageService
 from zoneinfo import ZoneInfo
 import uuid
@@ -46,6 +46,21 @@ class SalonService:
             "price": SalonService._format_price(row.get("price")),
             "is_active": row.get("is_active", True),
         }
+    
+    @staticmethod
+    def _normalize_time(value):
+        if value is None:
+            return None
+        if isinstance(value, dt_time):
+            return value.strftime("%H:%M:%S")
+        if isinstance(value, str):
+            val = value.strip()
+            for fmt in ("%H:%M:%S", "%H:%M"):
+                try:
+                    return datetime.strptime(val, fmt).strftime("%H:%M:%S")
+                except Exception:
+                    continue
+        return None
 
     #------------------------------------1. SALONS
     """registration and appeals made by salon owners """
@@ -487,6 +502,148 @@ class SalonService:
         except Exception as e:
             return None, str(e)
     #Admin notification format may need to be changed
+
+    @staticmethod
+    def get_salon_hours(salon_id: str):
+        """
+        Fetch weekly salon hours ordered by day_of_week.
+        """
+        try:
+            resp = (
+                supabase.table("salon_hours")
+                .select("*")
+                .eq("salon_id", salon_id)
+                .order("day_of_week", desc=False)
+                .execute()
+            )
+            return resp.data or [], None
+        except Exception as e:
+            return None, str(e)
+
+    @staticmethod
+    def upsert_salon_hours(salon_id: str, hours: list):
+        """
+        Replace salon hours with the provided weekly schedule.
+        """
+        try:
+            if not isinstance(hours, list) or not hours:
+                return None, "hours must be a non-empty list"
+
+            normalized = []
+            seen_days = set()
+
+            for entry in hours:
+                if not isinstance(entry, dict):
+                    return None, "Each hours entry must be an object"
+
+                day = entry.get("day_of_week")
+                is_closed = bool(entry.get("is_closed", False))
+                open_time = entry.get("open_time")
+                close_time = entry.get("close_time")
+
+                if day is None or not isinstance(day, int) or day < 0 or day > 6:
+                    return None, "day_of_week must be an integer between 0 (Sunday) and 6 (Saturday)"
+                if day in seen_days:
+                    return None, "Duplicate day_of_week entries are not allowed"
+                seen_days.add(day)
+
+                norm_open = SalonService._normalize_time(open_time)
+                norm_close = SalonService._normalize_time(close_time)
+
+                if not is_closed:
+                    if not norm_open or not norm_close:
+                        return None, f"open_time and close_time are required for day {day}"
+                    if norm_open >= norm_close:
+                        return None, f"open_time must be before close_time for day {day}"
+                else:
+                    norm_open = None
+                    norm_close = None
+
+                normalized.append({
+                    "salon_id": salon_id,
+                    "day_of_week": day,
+                    "open_time": norm_open,
+                    "close_time": norm_close,
+                    "is_closed": is_closed,
+                })
+
+            normalized.sort(key=lambda x: x["day_of_week"])
+
+            supabase.table("salon_hours").delete().eq("salon_id", salon_id).execute()
+            insert_resp = supabase.table("salon_hours").insert(normalized).execute()
+            if getattr(insert_resp, "error", None):
+                    return None, str(insert_resp.error)
+            return normalized, None
+        except Exception as e:
+            return None, str(e)
+
+    @staticmethod
+    def upsert_salon_hour_day(salon_id: str, day_of_week: int, payload: dict):
+        """
+        Create or update a single day's hours.
+        """
+        try:
+            if day_of_week is None or not isinstance(day_of_week, int) or day_of_week < 0 or day_of_week > 6:
+                return None, "day_of_week must be an integer between 0 (Sunday) and 6 (Saturday)"
+
+            is_closed = bool(payload.get("is_closed", False))
+            open_time = payload.get("open_time")
+            close_time = payload.get("close_time")
+
+            norm_open = SalonService._normalize_time(open_time)
+            norm_close = SalonService._normalize_time(close_time)
+
+            if not is_closed:
+                if not norm_open or not norm_close:
+                    return None, "open_time and close_time are required when is_closed is false"
+                if norm_open >= norm_close:
+                    return None, "open_time must be before close_time"
+            else:
+                norm_open = None
+                norm_close = None
+
+            existing = (
+                supabase.table("salon_hours")
+                .select("id")
+                .eq("salon_id", salon_id)
+                .eq("day_of_week", day_of_week)
+                .maybe_single()
+                .execute()
+            )
+            row = {
+                "salon_id": salon_id,
+                "day_of_week": day_of_week,
+                "open_time": norm_open,
+                "close_time": norm_close,
+                "is_closed": is_closed,
+            }
+
+            if getattr(existing, "data", None):
+                upd = supabase.table("salon_hours").update(row).eq("id", existing.data["id"]).execute()
+                if getattr(upd, "error", None):
+                    return None, str(upd.error)
+            else:
+                ins = supabase.table("salon_hours").insert(row).execute()
+                if getattr(ins, "error", None):
+                    return None, str(ins.error)
+
+            return row, None
+        except Exception as e:
+            return None, str(e)
+
+    @staticmethod
+    def delete_salon_hour_day(salon_id: str, day_of_week: int):
+        """
+        Delete a single day's hours entry.
+        """
+        try:
+            if day_of_week is None or not isinstance(day_of_week, int) or day_of_week < 0 or day_of_week > 6:
+                return None, "day_of_week must be an integer between 0 (Sunday) and 6 (Saturday)"
+
+            supabase.table("salon_hours").delete().eq("salon_id", salon_id).eq("day_of_week", day_of_week).execute()
+            return True, None
+        except Exception as e:
+            return None, str(e)
 
     @staticmethod
     def appeal_salon(salon_id, user_id, updates=None, logo_file=None, license_file=None):
