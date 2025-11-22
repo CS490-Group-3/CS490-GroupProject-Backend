@@ -56,14 +56,6 @@ parameters:
     type: string
     example: Trendy barbershop offering cuts, fades, and beard trims.
   - in: formData
-    name: hours
-    type: string
-    required: true
-    description: >
-      JSON string array of weekly hours. 0 = Sunday ... 6 = Saturday.  
-      Omitted days are auto-set to `is_closed: true`.  
-      Example: `[{"day_of_week":1,"open_time":"09:00","close_time":"18:00","is_closed":false}, {"day_of_week":0,"is_closed":true}]`
-  - in: formData
     name: logo
     type: file
     description: Optional salon logo
@@ -79,7 +71,6 @@ parameters:
       required:
         - name
         - address
-        - hours
       properties:
         name:
           type: string
@@ -111,27 +102,6 @@ parameters:
         license_url:
           type: string
           example: "https://cdn.example.com/license.pdf"
-        hours:
-          type: array
-          description: Weekly schedule entries (0 = Sunday ... 6 = Saturday). Omitted days are auto-set to closed.
-          items:
-            type: object
-            required: [day_of_week, is_closed]
-            properties:
-              day_of_week:
-                type: integer
-                example: 1
-              open_time:
-                type: string
-                description: Required when `is_closed` is false
-                example: "09:00"
-              close_time:
-                type: string
-                description: Required when `is_closed` is false
-                example: "18:00"
-              is_closed:
-                type: boolean
-                example: false
 
 responses:
   201:
@@ -142,9 +112,6 @@ responses:
         message:
           type: string
           example: "Salon registered successfully"
-        hours_saved:
-          type: boolean
-          example: true
         salon_name:
           type: string
           example: "Swag Shop"

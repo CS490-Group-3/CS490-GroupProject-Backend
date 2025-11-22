@@ -4,7 +4,7 @@ tags:
 summary: Update a pending salon application
 description: >
   Allows a salon owner to modify a pending application.  
-  Updates contact info, description, images, timezone, and business hours.
+  Updates contact info, description, images, and timezone.
 consumes:
   - application/json
   - multipart/form-data
@@ -68,12 +68,6 @@ parameters:
     name: license
     type: file
     description: Optional license upload
-  - in: formData
-    name: hours
-    type: string
-    description: >
-      JSON string array of weekly hours. Omitted days auto-set to closed.  
-      Example: `[{"day_of_week":1,"open_time":"09:00","close_time":"18:00","is_closed":false}]`
   - in: body
     name: body
     required: false
@@ -98,20 +92,6 @@ parameters:
           type: string
         timezone:
           type: string
-        hours:
-          type: array
-          items:
-            type: object
-            required: [day_of_week, is_closed]
-            properties:
-              day_of_week:
-                type: integer
-              open_time:
-                type: string
-              close_time:
-                type: string
-              is_closed:
-                type: boolean
 
 responses:
   200:
