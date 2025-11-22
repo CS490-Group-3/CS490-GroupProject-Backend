@@ -722,6 +722,52 @@ class SalonService:
             supabase.table("salons").update(valid_updates).eq("id", salon_id).execute()
         return {"message": "Appeal submitted successfully", "new_status": "pending"}
 
+    @staticmethod
+    def update_pending_salon(salon_id, owner_id, updates=None, logo_file=None, license_file=None, hours=None):
+        """
+        Allow an owner to update a pending salon application.
+        """
+        salon_response = (
+            supabase.table("salons")
+            .select("status, owner_id")
+            .eq("id", salon_id)
+            .single()
+            .execute()
+        )
+
+        if not salon_response.data:
+            return {"error": "Salon not found"}, 404
+
+        salon = salon_response.data
+
+        if salon["status"] != "pending":
+            return {"error": "Only pending applications can be updated."}, 400
+
+        if str(salon["owner_id"]) != str(owner_id):
+            return {"error": "You are not authorized to update this salon."}, 403
+
+        allowed_fields = ["name", "description", "address", "city", "state", "zip_code", "phone", "email", "license_url", "logo_url", "timezone"]
+        valid_updates = {k: v for k, v in (updates or {}).items() if k in allowed_fields and v is not None}
+
+        if "timezone" in valid_updates:
+            valid_updates["timezone"] = SalonService._clean_tz(valid_updates["timezone"])
+
+        if license_file:
+            valid_updates["license_url"] = StorageService.upload_file(license_file, salon_id, "license")
+        if logo_file:
+            valid_updates["logo_url"] = StorageService.upload_file(logo_file, salon_id, "logo")
+
+        if valid_updates:
+            valid_updates["updated_at"] = datetime.utcnow().isoformat()
+            supabase.table("salons").update(valid_updates).eq("id", salon_id).execute()
+
+        if hours:
+            hours_result, hours_error = SalonService.upsert_salon_hours(salon_id, hours)
+            if hours_error:
+                return {"error": f"Failed to save hours: {hours_error}"}, 400
+
+        return {"message": "Application updated successfully", "status": "pending"}, 200
+
 
 
 

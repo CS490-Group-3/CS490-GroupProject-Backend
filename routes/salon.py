@@ -163,6 +163,54 @@ def appeal_salon(salon_id):
         return jsonify({"error": str(e)}), 500
 
 
+@salon_bp.route("/<salon_id>/application", methods=["PATCH"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner'])
+@swag_from("../docs/salon_update_pending.yml")
+def update_pending_application(salon_id):
+    """
+    Update a pending salon application (owner only).
+    """
+    try:
+        user = get_current_user()
+        owner_id = user.get("sub")
+
+        if request.content_type and "multipart/form-data" in request.content_type:
+            body = request.form.to_dict()
+            hours_raw = request.form.get("hours")
+            if hours_raw:
+                try:
+                    body["hours"] = json.loads(hours_raw)
+                except json.JSONDecodeError:
+                    return jsonify({"error": "Invalid JSON for hours"}), 400
+            logo_file = request.files.get("logo")
+            license_file = request.files.get("license")
+        else:
+            body = request.get_json() or {}
+            if isinstance(body.get("hours"), str):
+                try:
+                    body["hours"] = json.loads(body["hours"])
+                except json.JSONDecodeError:
+                    return jsonify({"error": "Invalid JSON for hours"}), 400
+            logo_file = None
+            license_file = None
+
+        updates = body.copy()
+        hours = updates.pop("hours", None)
+
+        result, status_code = SalonService.update_pending_salon(
+            salon_id,
+            owner_id,
+            updates=updates,
+            logo_file=logo_file,
+            license_file=license_file,
+            hours=hours,
+        )
+        return jsonify(result), status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 
 @salon_bp.route('/<uuid:salon_id>/promotions', methods=['POST'])
 @login_required()
