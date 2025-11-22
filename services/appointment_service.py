@@ -226,12 +226,28 @@ class AppointmentService:
                 .in_("appointment_id", appointment_ids)
                 .execute()
             )
+            review_ids = [row["id"] for row in (rev_resp.data or []) if row.get("id")]
+            responses_map = {}
+            if review_ids:
+                responses_resp = (
+                    supabase.table("review_responses")
+                    .select("*")
+                    .in_("review_id", review_ids)
+                    .execute()
+                )
+                responses_map = {r["review_id"]: r for r in (responses_resp.data or [])}
+            
             for row in rev_resp.data or []:
-                reviews_map[row["appointment_id"]] = {
+                review_data = {
                     "id": row.get("id"),
                     "stars": row.get("rating"),
                     "text": row.get("comment"),
+                    "rating": row.get("rating"),
                 }
+                # Attach response if it exists
+                if row.get("id") in responses_map:
+                    review_data["response"] = responses_map[row.get("id")]
+                reviews_map[row["appointment_id"]] = review_data
 
         customers = {}
         if customer_ids:
@@ -820,8 +836,10 @@ class AppointmentService:
                                    when: str = "all",
                                    status=None,
                                    page: int = 1,
-                                   limit: int = 20):
+                                   limit: int = 20,
+                                   customer_id: Optional[str] = None):
         # fetches all appointments for a salon (supports upcoming/past/all)
+        # If customer_id is provided, filters by customer
         try:
             query = (
                 supabase.table("appointments")
@@ -829,6 +847,8 @@ class AppointmentService:
                 .in_("salon_id", salon_ids)
                 .order("start_at", desc=False)
             )
+            if customer_id:
+                query = query.eq("customer_id", customer_id)
             query = AppointmentService._apply_filters(query, when, status)
             query = AppointmentService._paginate(query, page, limit)
             response = query.execute()
