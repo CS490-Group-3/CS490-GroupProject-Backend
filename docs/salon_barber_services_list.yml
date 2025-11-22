@@ -1,0 +1,103 @@
+---
+tags:
+  - Salon
+summary: Get services assigned to a barber
+description: >
+  Returns all services assigned to a barber. Validates salon ownership (for salon owners),
+  or that the barber belongs to the salon (for barbers viewing their own services).
+  Salon owners, barbers, and admins may access this endpoint.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon UUID
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+  - in: path
+    name: barber_id
+    type: string
+    format: uuid
+    required: true
+    description: Barber UUID
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+responses:
+  200:
+    description: Services retrieved successfully
+    schema:
+      type: object
+      properties:
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                example: "f9876543-21ba-fedc-3210-fedcba987654"
+              name:
+                type: string
+                example: "Skin Fade"
+              description:
+                type: string
+                example: "Low taper with razor lineup."
+              duration_minutes:
+                type: integer
+                example: 45
+              price:
+                type: number
+                example: 35.0
+              is_active:
+                type: boolean
+                example: true
+
+  400:
+    description: Validation error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Barber does not belong to this salon"
+
+  403:
+    description: Forbidden - salon ownership or access denied
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Forbidden: You don't own this salon"
+
+  404:
+    description: Salon or barber not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Barber not found"
+
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred"
+

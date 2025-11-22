@@ -6,6 +6,7 @@ from models.salon import SalonRegisterRequest
 from services.salon_service import SalonService
 from services.promotion_service import PromotionService
 from services.visit_history_service import VisitHistoryService
+from services.auth_service import AuthService
 from config import supabase
 from flasgger.utils import swag_from
 
@@ -589,6 +590,136 @@ def add_service_provider():
             return jsonify({"error": error}), 400
         
         return jsonify(result), 201
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+#---------------------------------------5. BARBER SERVICES (assign services to barbers)
+
+@salon_bp.route("/<salon_id>/barbers/<barber_id>/services", methods=["POST"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/salon_barber_service_add.yml")
+def add_service_to_barber(salon_id, barber_id):
+    """
+    Add a service to a barber.
+    Validates salon ownership, barber belongs to salon, and service belongs to salon.
+    """
+    try:
+        user = get_current_user()
+        user_id = user.get("sub")
+        role = user.get("role")
+        
+        # Verify salon ownership for salon_owner
+        if role == "salon_owner":
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return jsonify({"error": "Salon not found"}), 404
+            
+            if str(salon_resp.data.get("owner_id")) != str(user_id):
+                return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+        
+        json_data = request.get_json()
+        if not json_data:
+            return jsonify({"error": "Invalid JSON body"}), 400
+        
+        service_id = json_data.get('service_id')
+        if not service_id:
+            return jsonify({"error": "Missing required field: service_id"}), 400
+        
+        result, error = SalonService.add_service_to_barber(salon_id, barber_id, service_id, user_id)
+        
+        if error:
+            return jsonify({"error": error}), 400
+        
+        return jsonify(result), 201
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@salon_bp.route("/<salon_id>/barbers/<barber_id>/services/<service_id>", methods=["DELETE"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/salon_barber_service_remove.yml")
+def remove_service_from_barber(salon_id, barber_id, service_id):
+    """
+    Remove a service from a barber.
+    Validates salon ownership, barber belongs to salon, and service belongs to salon.
+    """
+    try:
+        user = get_current_user()
+        user_id = user.get("sub")
+        role = user.get("role")
+        
+        # Verify salon ownership for salon_owner
+        if role == "salon_owner":
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return jsonify({"error": "Salon not found"}), 404
+            
+            if str(salon_resp.data.get("owner_id")) != str(user_id):
+                return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+        
+        result, error = SalonService.remove_service_from_barber(salon_id, barber_id, service_id, user_id)
+        
+        if error:
+            return jsonify({"error": error}), 400
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@salon_bp.route("/<salon_id>/barbers/<barber_id>/services", methods=["GET"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner', 'barber', 'admin'])
+@swag_from("../docs/salon_barber_services_list.yml")
+def get_barber_services(salon_id, barber_id):
+    """
+    Get all services assigned to a barber.
+    Validates salon ownership (for salon_owner) or barber belongs to salon (for barber).
+    """
+    try:
+        user = get_current_user()
+        user_id = user.get("sub")
+        user_role = user.get("role")
+        
+        # For salon_owner, verify ownership
+        if user_role == "salon_owner":
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return jsonify({"error": "Salon not found"}), 404
+            
+            if str(salon_resp.data.get("owner_id")) != str(user_id):
+                return jsonify({"error": "Forbidden: You don't own this salon"}), 403
+        # For barber, verify they belong to this salon and are viewing their own services
+        elif user_role == "barber":
+            barber_id_from_user, _ = AuthService.get_barber_id(user_id)
+            if not barber_id_from_user:
+                return jsonify({"error": "Barber profile not found"}), 404
+            
+            barber_resp = supabase.table("barbers").select("id,salon_id").eq("id", barber_id_from_user).single().execute()
+            if not barber_resp.data:
+                return jsonify({"error": "Barber not found"}), 404
+            
+            if str(barber_resp.data.get("salon_id")) != str(salon_id):
+                return jsonify({"error": "Forbidden: You don't belong to this salon"}), 403
+            
+            # Verify the requested barber_id matches the authenticated barber
+            if str(barber_id_from_user) != str(barber_id):
+                return jsonify({"error": "Forbidden: You can only view your own services"}), 403
+        
+        # For salon_owner, use user_id as owner_id. For admin/barber, pass None (no ownership check needed)
+        owner_id = user_id if user_role == "salon_owner" else None
+        
+        services, error = SalonService.get_barber_services(salon_id, barber_id, owner_id)
+        
+        if error:
+            return jsonify({"error": error}), 400
+        
+        return jsonify({"services": services}), 200
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500

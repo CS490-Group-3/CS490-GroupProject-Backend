@@ -814,3 +814,178 @@ class SalonService:
             return {"timeline": response.data, "count": len(response.data)}
         except Exception as e:
             raise Exception(f"Failed to fetch salon status history: {e}")
+
+    #------------------------------------BARBER SERVICES MANAGEMENT
+    @staticmethod
+    def add_service_to_barber(salon_id: str, barber_id: str, service_id: str, owner_id: str):
+        """
+        Add a service to a barber. Validates:
+        - Salon ownership
+        - Barber belongs to salon
+        - Service belongs to salon
+        
+        Args:
+            salon_id: Salon UUID
+            barber_id: Barber UUID
+            service_id: Service UUID
+            owner_id: Owner user ID for validation
+        
+        Returns:
+            Tuple of (result_dict, error_message)
+        """
+        try:
+            # Verify salon ownership
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return None, "Salon not found"
+            
+            if str(salon_resp.data.get("owner_id")) != str(owner_id):
+                return None, "Forbidden: You don't own this salon"
+            
+            # Verify barber belongs to salon
+            barber_resp = supabase.table("barbers").select("id,salon_id").eq("id", barber_id).single().execute()
+            if getattr(barber_resp, "error", None) or not barber_resp.data:
+                return None, "Barber not found"
+            
+            if str(barber_resp.data.get("salon_id")) != str(salon_id):
+                return None, "Barber does not belong to this salon"
+            
+            # Verify service belongs to salon
+            service_resp = supabase.table("services").select("id,salon_id").eq("id", service_id).single().execute()
+            if getattr(service_resp, "error", None) or not service_resp.data:
+                return None, "Service not found"
+            
+            if str(service_resp.data.get("salon_id")) != str(salon_id):
+                return None, "Service does not belong to this salon"
+            
+            # Check if relationship already exists
+            existing = supabase.table("barber_services").select("barber_id,service_id").eq("barber_id", barber_id).eq("service_id", service_id).execute()
+            if existing.data:
+                return None, "Service is already assigned to this barber"
+            
+            # Insert the relationship
+            response = supabase.table("barber_services").insert({
+                "barber_id": barber_id,
+                "service_id": service_id
+            }).execute()
+            
+            if getattr(response, "error", None):
+                return None, response.error.message
+            
+            return {"message": "Service added to barber successfully"}, None
+            
+        except Exception as e:
+            return None, str(e)
+    
+    @staticmethod
+    def remove_service_from_barber(salon_id: str, barber_id: str, service_id: str, owner_id: str):
+        """
+        Remove a service from a barber. Validates:
+        - Salon ownership
+        - Barber belongs to salon
+        - Service belongs to salon
+        
+        Args:
+            salon_id: Salon UUID
+            barber_id: Barber UUID
+            service_id: Service UUID
+            owner_id: Owner user ID for validation
+        
+        Returns:
+            Tuple of (result_dict, error_message)
+        """
+        try:
+            # Verify salon ownership
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return None, "Salon not found"
+            
+            if str(salon_resp.data.get("owner_id")) != str(owner_id):
+                return None, "Forbidden: You don't own this salon"
+            
+            # Verify barber belongs to salon
+            barber_resp = supabase.table("barbers").select("id,salon_id").eq("id", barber_id).single().execute()
+            if getattr(barber_resp, "error", None) or not barber_resp.data:
+                return None, "Barber not found"
+            
+            if str(barber_resp.data.get("salon_id")) != str(salon_id):
+                return None, "Barber does not belong to this salon"
+            
+            # Verify service belongs to salon
+            service_resp = supabase.table("services").select("id,salon_id").eq("id", service_id).single().execute()
+            if getattr(service_resp, "error", None) or not service_resp.data:
+                return None, "Service not found"
+            
+            if str(service_resp.data.get("salon_id")) != str(salon_id):
+                return None, "Service does not belong to this salon"
+            
+            # Delete the relationship
+            response = supabase.table("barber_services").delete().eq("barber_id", barber_id).eq("service_id", service_id).execute()
+            
+            if getattr(response, "error", None):
+                return None, response.error.message
+            
+            if not response.data:
+                return None, "Service is not assigned to this barber"
+            
+            return {"message": "Service removed from barber successfully"}, None
+            
+        except Exception as e:
+            return None, str(e)
+    
+    @staticmethod
+    def get_barber_services(salon_id: str, barber_id: str, owner_id: str = None):
+        """
+        Get all services assigned to a barber. Validates:
+        - Salon exists
+        - Barber belongs to salon
+        - If owner_id provided, validates salon ownership
+        
+        Args:
+            salon_id: Salon UUID
+            barber_id: Barber UUID
+            owner_id: Owner user ID for validation (optional, for salon_owner role)
+        
+        Returns:
+            Tuple of (services_list, error_message)
+        """
+        try:
+            # Verify salon exists
+            salon_resp = supabase.table("salons").select("owner_id").eq("id", salon_id).single().execute()
+            if getattr(salon_resp, "error", None) or not salon_resp.data:
+                return None, "Salon not found"
+            
+            # If owner_id provided, verify salon ownership
+            if owner_id:
+                if str(salon_resp.data.get("owner_id")) != str(owner_id):
+                    return None, "Forbidden: You don't own this salon"
+            
+            # Verify barber belongs to salon
+            barber_resp = supabase.table("barbers").select("id,salon_id").eq("id", barber_id).single().execute()
+            if getattr(barber_resp, "error", None) or not barber_resp.data:
+                return None, "Barber not found"
+            
+            if str(barber_resp.data.get("salon_id")) != str(salon_id):
+                return None, "Barber does not belong to this salon"
+            
+            # Get services for this barber
+            response = (
+                supabase.table("barber_services")
+                .select("service_id, services(id, name, description, duration_minutes, price, is_active)")
+                .eq("barber_id", barber_id)
+                .execute()
+            )
+            
+            if getattr(response, "error", None):
+                return None, response.error.message
+            
+            services = []
+            for row in (response.data or []):
+                service_data = row.get("services")
+                if service_data:
+                    services.append(service_data)
+            
+            return services, None
+            
+        except Exception as e:
+            return None, str(e)
