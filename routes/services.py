@@ -75,3 +75,56 @@ def get_service(service_id):
         return jsonify(service_response.model_dump()), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@services_bp.route("/<service_id>", methods=["PATCH"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/service_update.yml")
+def update_service(service_id):
+    """
+    Update a service.
+    """
+    try:
+        user_id = get_current_user().get('sub')
+        json_data = request.get_json()
+        if not json_data:
+            return jsonify({"error": "Invalid JSON body"}), 400
+        
+        salon_id = json_data.get('salon_id')
+        if not salon_id:
+            return jsonify({"error": "Missing salon_id"}), 400
+        
+        updates = {k: v for k, v in json_data.items() if k != 'salon_id'}
+        result, error = SalonService.update_service(service_id, salon_id, user_id, updates)
+        
+        if error:
+            status_code = 403 if "Forbidden" in error else 404
+            return jsonify({"error": error}), status_code
+        
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@services_bp.route("/<service_id>", methods=["DELETE"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/service_delete.yml")
+def delete_service(service_id):
+    """
+    Delete a service.
+    """
+    try:
+        user_id = get_current_user().get('sub')
+        salon_id = request.args.get('salon_id')
+        if not salon_id:
+            return jsonify({"error": "Missing salon_id query parameter"}), 400
+        
+        result, error = SalonService.delete_service(service_id, salon_id, user_id)
+        
+        if error:
+            status_code = 403 if "Forbidden" in error else 404
+            return jsonify({"error": error}), status_code
+        
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
