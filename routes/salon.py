@@ -79,24 +79,12 @@ def register_salon():
     try:
         if request.content_type and "multipart/form-data" in request.content_type:
             form = request.form.to_dict()
-            hours_raw = request.form.get("hours")
-            if hours_raw:
-                try:
-                    form["hours"] = json.loads(hours_raw)
-                except json.JSONDecodeError:
-                    return jsonify({"error": "Invalid JSON for hours"}), 400
             parsed = SalonRegisterRequest(**form)
             logo_file = request.files.get("logo")
             license_file = request.files.get("license")
         else:
 
             data = request.get_json() or {}
-            hours_raw = data.get("hours")
-            if isinstance(hours_raw, str):
-                try:
-                    data["hours"] = json.loads(hours_raw)
-                except json.JSONDecodeError:
-                    return jsonify({"error": "Invalid JSON for hours"}), 400
             parsed = SalonRegisterRequest(**data)
             logo_file = None
             license_file = None
@@ -119,9 +107,12 @@ def register_salon():
     except ValidationError as e:
         return jsonify({"error": "Validation failed","details": [str(err) for err in e.errors()]}), 400
     except ValueError as e:
+        print(f"[register_salon] ValueError: {e}")
         return jsonify({"error": str(e)}), 400
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -177,26 +168,14 @@ def update_pending_application(salon_id):
 
         if request.content_type and "multipart/form-data" in request.content_type:
             body = request.form.to_dict()
-            hours_raw = request.form.get("hours")
-            if hours_raw:
-                try:
-                    body["hours"] = json.loads(hours_raw)
-                except json.JSONDecodeError:
-                    return jsonify({"error": "Invalid JSON for hours"}), 400
             logo_file = request.files.get("logo")
             license_file = request.files.get("license")
         else:
             body = request.get_json() or {}
-            if isinstance(body.get("hours"), str):
-                try:
-                    body["hours"] = json.loads(body["hours"])
-                except json.JSONDecodeError:
-                    return jsonify({"error": "Invalid JSON for hours"}), 400
             logo_file = None
             license_file = None
 
         updates = body.copy()
-        hours = updates.pop("hours", None)
 
         result, status_code = SalonService.update_pending_salon(
             salon_id,
@@ -204,7 +183,6 @@ def update_pending_application(salon_id):
             updates=updates,
             logo_file=logo_file,
             license_file=license_file,
-            hours=hours,
         )
         return jsonify(result), status_code
     except Exception as e:
