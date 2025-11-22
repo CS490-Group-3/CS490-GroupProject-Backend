@@ -398,12 +398,13 @@ class SalonService:
     def get_salon_services(salon_id, data=None):
         """
         Get all services for a salon.
+        Returns tuple: (services_list, error_message)
         """
         try:
             if data is None:
                 response = supabase.table("services").select("*").eq("salon_id", salon_id).execute()
                 if not response.data:
-                    return {"error":"No services found for this salon"}
+                    return [], None  # Return empty list, not error
             else:
                 query = supabase.table("services").select("*").eq("salon_id", salon_id)
 
@@ -425,15 +426,15 @@ class SalonService:
         
                 response = query.execute()
                 if not response.data:
-                    return {"error":"No services found matching the criteria"}
+                    return [], None  # Return empty list, not error
                 if "tags" in filters:
                     tags = filters.get("tags", [])
                     services_with_tags = supabase.table("service_tags").select("service_id").in_("tag_id", tags).execute()
                     service_ids = {item["service_id"] for item in services_with_tags.data}
                     filtered_services = [service for service in response.data if service["id"] in service_ids]
-                    return filtered_services
+                    return filtered_services, None
                 
-            return response.data, None
+            return response.data or [], None
         except Exception as e:
             return None, str(e)
 
@@ -496,6 +497,7 @@ class SalonService:
     def salon_owner_employee_search(query_str):
         """
         Search by email for service providers (barbers) to add to a salon.
+        Returns users with role "barber" who are NOT currently in any salon (not in barbers table).
         """
         try:
             response= supabase.table("user_details").select("id,email,first_name,last_name").ilike("email", f"%{query_str}%").eq("role", "barber").execute()
@@ -508,9 +510,10 @@ class SalonService:
             barber_response= supabase.table("barbers").select("user_id").in_("user_id", user_ids).eq("is_active", True).execute()
             
             active_user_ids = {item["user_id"] for item in barber_response.data}
-            user_ids = [uid for uid in response.data if uid["id"] not in active_user_ids]
-            print("Found user IDs:", user_ids)
-            return user_ids, None
+            # Filter to only return users NOT in barbers table, and return full user details
+            available_users = [item for item in response.data if item["id"] not in active_user_ids]
+            print("Found available users:", available_users)
+            return available_users, None
             
         except Exception as e:
             return None, str(e)
