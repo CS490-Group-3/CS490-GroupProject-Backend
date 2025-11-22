@@ -258,6 +258,27 @@ def get_salon_status_history(salon_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@salon_bp.route("/mine", methods=["GET"], strict_slashes=False)
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/salon_mine.yml")
+def get_my_salon():
+    """
+    Fetch the current owner's salon (single).
+    """
+    try:
+        user = get_current_user()
+        owner_id = user.get("sub")
+        if not owner_id:
+            return jsonify({"error": "User ID missing"}), 400
+
+        salon, error = SalonService.get_owned_salon(owner_id)
+        if error:
+            return jsonify({"error": error}), 500
+        return jsonify({"salon": salon}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @salon_bp.route("/<salon_id>/hours", methods=["GET"], strict_slashes=False)
 @login_required()
 @role_required(['admin', 'salon_owner'])
@@ -267,7 +288,7 @@ def get_salon_hours(salon_id):
     Get weekly hours for a salon (owner/admin only).
     """
     try:
-        user = g.user or {}
+        user = get_current_user()
         role = user.get("role")
         user_id = user.get("sub")
 
@@ -295,7 +316,7 @@ def update_salon_hours(salon_id):
     Create or replace weekly hours for a salon.
     """
     try:
-        user = g.user or {}
+        user = get_current_user()
         user_id = user.get("sub")
         role = user.get("role")
 
@@ -329,7 +350,7 @@ def update_salon_hour_day(salon_id, day_of_week):
     Update or create hours for a single day.
     """
     try:
-        user = g.user or {}
+        user = get_current_user()
         user_id = user.get("sub")
         role = user.get("role")
 
@@ -357,7 +378,7 @@ def delete_salon_hour_day(salon_id, day_of_week):
     Delete hours for a single day.
     """
     try:
-        user = g.user or {}
+        user = get_current_user()
         user_id = user.get("sub")
         role = user.get("role")
 

@@ -237,6 +237,25 @@ class SalonService:
             return None, str(e)
 
     @staticmethod
+    def get_owned_salon(owner_id: str):
+        """
+        Fetch the first/only salon for a given owner.
+        """
+        try:
+            resp = (
+                supabase.table("salons")
+                .select("id,name,status,created_at,city,state,zip_code")
+                .eq("owner_id", owner_id)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            data = resp.data or []
+            return (data[0] if data else None), None
+        except Exception as e:
+            return None, str(e)
+
+    @staticmethod
     def get_salon_detail(salon_id):
         """
         Fetch a single salon with services, team, hours, and rating summary.
