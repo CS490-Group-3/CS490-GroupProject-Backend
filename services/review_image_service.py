@@ -1,12 +1,13 @@
 from config import supabase
 from services.upload_file import StorageService
-from werkzeug.exceptions import BadRequest, Forbidden   # same style as your project
+from werkzeug.exceptions import BadRequest, Forbidden, NotFound
+
 
 class ReviewImageService:
 
     @staticmethod
-    def upload_image(user_id, review_id, file):
-
+    def upload_images(user_id, review_id, files, labels=None):
+        # 1. Validate review exists
         review = (
             supabase.table("reviews")
             .select("*")
@@ -22,25 +23,37 @@ class ReviewImageService:
         if review["user_id"] != user_id:
             raise Forbidden("You can only upload images for your own reviews")
 
-        result = StorageService.upload_review_image(file, review_id, user_id)
+        # 2. Optional labels (before, after, etc.)
+        if labels and len(labels) != len(files):
+            raise BadRequest("Labels count does not match number of files")
 
-        record = {
-            "review_id": review_id,
-            "file_url": result["filepath"],
-            "uploaded_by": user_id
+        inserted_rows = []
+
+        for idx, file in enumerate(files):
+            result = StorageService.upload_review_image(file, review_id, user_id)
+
+            record = {
+                "review_id": review_id,
+                "file_url": result["filepath"],
+                "uploaded_by": user_id,
+                "label": labels[idx] if labels else None,
+            }
+
+            row = (
+                supabase.table("review_images")
+                .insert(record)
+                .execute()
+                .data[0]
+            )
+
+            row["signed_url"] = result["signed_url"]
+            inserted_rows.append(row)
+
+        return {
+            "message": "Images uploaded successfully",
+            "count": len(inserted_rows),
+            "images": inserted_rows
         }
-
-        row = (
-            supabase.table("review_images")
-            .insert(record)
-            .execute()
-            .data[0]
-        )
-
-        row["signed_url"] = result["signed_url"] 
-
-        return row
-
 
 
     @staticmethod
@@ -78,3 +91,4 @@ class ReviewImageService:
         supabase.table("review_images").delete().eq("id", image_id).execute()
 
         return {"message": "Image deleted successfully"}
+

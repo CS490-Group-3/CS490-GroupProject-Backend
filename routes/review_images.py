@@ -10,14 +10,16 @@ from .reviews import reviews_bp
 @swag_from("../docs/reviews_upload_image.yml")
 def upload_review_image(review_id):
     try:
-        file = request.files.get("file")
-        if not file:
-            return jsonify({"error": "Missing file"}), 400
+        files = request.files.getlist("files")
+        if not files:
+            return jsonify({"error": "Missing files"}), 400
+
+        labels = request.form.getlist("labels") or None
 
         user_id = g.user["sub"]
 
-        row = ReviewImageService.upload_image(user_id, review_id, file)
-        return jsonify(row), 200
+        rows = ReviewImageService.upload_images(user_id, review_id, files, labels)
+        return jsonify(rows), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
