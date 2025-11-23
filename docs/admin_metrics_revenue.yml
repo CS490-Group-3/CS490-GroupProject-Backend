@@ -1,0 +1,39 @@
+---
+tags:
+  - Admin
+summary: Get revenue metrics
+description: >
+  Retrieve revenue metrics for a date range including total revenue, daily breakdown,
+  and revenue by salon.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+  - in: query
+    name: start_date
+    required: true
+    schema:
+      type: string
+      format: date
+    example: "2024-01-01"
+  - in: query
+    name: end_date
+    required: true
+    schema:
+      type: string
+      format: date
+    example: "2024-01-31"
+responses:
+  200:
+    description: Revenue metrics retrieved successfully
+    schema:
+      type: object
+  400:
+    description: Bad request
+  403:
+    description: Forbidden
+  500:
+    description: Internal server error
+
