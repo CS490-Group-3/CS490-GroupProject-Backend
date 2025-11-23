@@ -8,7 +8,7 @@ from datetime import timedelta
 
 class StorageService:
     @staticmethod
-    def upload_file(file, salon_id, file_type):
+    def upload_file(file, salon_id, file_type, expires_in_days: int = 365):
         """
         Upload file to Supabase Storage and return a signed URL.
         file_type: 'license' or 'logo'
@@ -24,23 +24,32 @@ class StorageService:
         filename = f"{salon_id}/{file_type}/{file.filename}"
         file_bytes = file.read()
 
-        res = supabase.storage.from_(bucket_name).upload(filename, file_bytes)
+        file_opts = {
+            "content-type": file.mimetype or "application/octet-stream",
+            "upsert": "true",
+        }
+
+        res = supabase.storage.from_(bucket_name).upload(filename, file_bytes, file_options=file_opts)
         if hasattr(res, "error") and res.error:
-            raise Exception(res.error.message)
+            raise Exception(f"storage upload failed ({bucket_name}/{filename}): {res.error.message}")
+        else:
+            print(f"[storage upload] success bucket={bucket_name} path={filename}")
 
         # Generate signed URL (valid for 7 days)
         signed = supabase.storage.from_(bucket_name).create_signed_url(
             filename,
-            int(timedelta(days=7).total_seconds())
+            int(timedelta(days=expires_in_days).total_seconds())
         )
         if hasattr(signed, "error") and signed.error:
-            raise Exception(signed.error.message)
+            raise Exception(f"storage signed url failed ({bucket_name}/{filename}): {signed.error.message}")
+        else:
+            print(f"[storage signed url] success bucket={bucket_name} path={filename}")
 
         return signed["signedURL"]
 
 
     @staticmethod
-    def regenerate_signed_url(filepath: str, expires_in_days: int = 7):
+    def regenerate_signed_url(filepath: str, expires_in_days: int = 365):
         try:
             seconds = int(timedelta(days=expires_in_days).total_seconds())
             res = supabase.storage.from_(BUCKET_NAME).create_signed_url(filepath, seconds)

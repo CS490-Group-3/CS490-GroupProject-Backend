@@ -103,7 +103,7 @@ class ReviewService:
 
     @staticmethod
     def get_reviews_for_salon(salon_id):
-        return (
+        reviews = (
             supabase.table("reviews")
             .select("*")
             .eq("salon_id", salon_id)
@@ -111,6 +111,23 @@ class ReviewService:
             .execute()
             .data
         )
+        
+        # Fetch responses for all reviews
+        if reviews:
+            review_ids = [r["id"] for r in reviews]
+            responses_resp = (
+                supabase.table("review_responses")
+                .select("*")
+                .in_("review_id", review_ids)
+                .execute()
+            )
+            responses = {r["review_id"]: r for r in (responses_resp.data or [])}
+            
+            # Attach responses to reviews
+            for review in reviews:
+                review["response"] = responses.get(review["id"])
+        
+        return reviews
 
     @staticmethod
     def get_full_review(review_id):

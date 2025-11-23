@@ -1,0 +1,115 @@
+---
+tags:
+  - Salon
+summary: Get services for a salon
+description: >
+  Returns all services for a salon with optional search and filter criteria.
+  Accepts filters in the request body even though the method is GET.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon ID to fetch services for
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+  - in: body
+    name: body
+    required: false
+    schema:
+      type: object
+      properties:
+        search:
+          type: string
+          description: Case-insensitive match on service name
+          example: "fade"
+        filters:
+          type: object
+          properties:
+            is_active:
+              type: boolean
+              example: true
+            price_range:
+              type: array
+              items:
+                type: number
+              minItems: 2
+              maxItems: 2
+              example: [20, 60]
+            duration_range:
+              type: array
+              items:
+                type: integer
+              minItems: 2
+              maxItems: 2
+              example: [30, 60]
+            tags:
+              type: array
+              description: List of tag IDs to include
+              items:
+                type: integer
+              example: [1, 5]
+
+responses:
+  200:
+    description: Services retrieved
+    schema:
+      type: object
+      properties:
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              salon_id:
+                type: string
+                format: uuid
+              name:
+                type: string
+                example: "Skin Fade"
+              description:
+                type: string
+                example: "Low taper with razor lineup."
+              duration_minutes:
+                type: integer
+                example: 45
+              price:
+                type: number
+                example: 35.0
+              is_active:
+                type: boolean
+                example: true
+              created_at:
+                type: string
+                format: date-time
+                example: "2024-05-10T18:00:00Z"
+  404:
+    description: No services found or salon missing
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "No services found matching the criteria"
+  500:
+    description: Unexpected server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Database connection failed"

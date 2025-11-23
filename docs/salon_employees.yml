@@ -1,0 +1,71 @@
+---
+tags:
+  - Salon
+summary: Get salon employees
+description: >
+  Returns service providers (barbers) for a salon including profile details.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon ID to fetch employees for
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+responses:
+  200:
+    description: Employees retrieved
+    schema:
+      type: object
+      properties:
+        employees:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: "a11b22"
+              user_id:
+                type: string
+                format: uuid
+              name:
+                type: string
+                example: "Jordan Lee"
+              bio:
+                type: string
+                example: "Fade specialist with 8 years of experience."
+              years_experience:
+                type: integer
+                example: 8
+              is_active:
+                type: boolean
+                example: true
+              avatar:
+                type: string
+                example: "https://cdn.example.com/avatars/jordan.png"
+  404:
+    description: Salon or employees not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Salon not found"
+  500:
+    description: Unexpected server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Database connection failed"

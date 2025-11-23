@@ -1,0 +1,135 @@
+---
+tags:
+  - Salon
+summary: List verified salons
+description: >
+  Returns public, verified salons with optional keyword, location, and service filters.
+  Results can be sorted by top-rated or most recently created salons.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: query
+    name: q
+    type: string
+    required: false
+    description: Keyword search across salon name, description, and address
+    example: "fade"
+
+  - in: query
+    name: location
+    type: string
+    required: false
+    description: City, state, ZIP, or partial address filter
+    example: "Newark"
+
+  - in: query
+    name: services
+    type: string
+    required: false
+    description: Comma-separated list of service names to include (case-insensitive exact match)
+    example: "Haircut,Shave"
+
+  - in: query
+    name: sort
+    type: string
+    required: false
+    enum: [top, recent]
+    default: top
+    description: Sort by highest rating (`top`) or most recent (`recent`)
+    example: "top"
+
+responses:
+  200:
+    description: List of verified salons
+    schema:
+      type: object
+      properties:
+        salons:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+                example: "Fade Masters"
+              description:
+                type: string
+                example: "Trendy fades, beard trims, and line-ups."
+              address:
+                type: string
+                example: "123 Main Street, Newark, NJ, 07102"
+              city:
+                type: string
+                example: "Newark"
+              state:
+                type: string
+                example: "NJ"
+              zip_code:
+                type: string
+                example: "07102"
+              phone:
+                type: string
+                example: "9735551234"
+              email:
+                type: string
+                example: "hello@fademasters.com"
+              logo_url:
+                type: string
+                example: "https://cdn.example.com/logos/fade.png"
+              rating:
+                type: number
+                format: float
+                example: 4.7
+                description: Average rating rounded to 1 decimal place, or null if no reviews
+              reviews_count:
+                type: integer
+                example: 12
+              services:
+                type: array
+                description: Up to 4 top services for preview
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    name:
+                      type: string
+                      example: "Skin Fade"
+                    description:
+                      type: string
+                      example: "Low taper with razor lineup."
+                    duration_minutes:
+                      type: integer
+                      example: 45
+                    price:
+                      type: number
+                      example: 35.0
+                    is_active:
+                      type: boolean
+                      example: true
+  400:
+    description: Invalid filter or lookup failure
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unsupported sort option"
+  500:
+    description: Unexpected server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Database connection failed"

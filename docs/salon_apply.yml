@@ -63,6 +63,45 @@ parameters:
     name: license
     type: file
     description: Optional license upload
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required:
+        - name
+        - address
+      properties:
+        name:
+          type: string
+          example: Swag Shop
+        address:
+          type: string
+          example: 123 Main Street
+        city:
+          type: string
+          example: Newark
+        state:
+          type: string
+          example: NJ
+        zip_code:
+          type: string
+          example: "07102"
+        timezone:
+          type: string
+          example: "America/New_York"
+        phone:
+          type: string
+          example: "9735551234"
+        email:
+          type: string
+          example: owner@swagshop.com
+        description:
+          type: string
+          example: Trendy barbershop offering cuts, fades, and beard trims.
+        license_url:
+          type: string
+          example: "https://cdn.example.com/license.pdf"
 
 responses:
   201:
@@ -73,18 +112,15 @@ responses:
         message:
           type: string
           example: "Salon registered successfully"
-        salon:
-          type: object
-          properties:
-            id:
-              type: string
-              example: "b534633a-23bc-4479-968f-8a004615821c"
-            name:
-              type: string
-              example: "Swag Shop"
-            status:
-              type: string
-              example: "pending"
+        salon_name:
+          type: string
+          example: "Swag Shop"
+        salon_id:
+          type: string
+          example: "b534633a-23bc-4479-968f-8a004615821c"
+        verification_status:
+          type: string
+          example: "pending"
   400:
     description: Validation failed or missing contact info
     schema:
@@ -109,4 +145,3 @@ responses:
         error:
           type: string
           example: "Unexpected error occurred while registering salon."
-

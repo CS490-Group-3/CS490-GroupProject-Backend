@@ -1,0 +1,114 @@
+---
+tags:
+  - Salon
+summary: Update an employee's (barber's) information
+description: >
+  Updates a barber's bio, years_experience, or is_active status.
+  Validates that the salon owner owns the salon and the barber belongs to the salon.
+  Only salon owners and admins may perform this action.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon UUID
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+  - in: path
+    name: barber_id
+    type: string
+    format: uuid
+    required: true
+    description: Barber UUID to update
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      properties:
+        bio:
+          type: string
+          example: "Expert in fades and beard grooming with 10 years of experience"
+        years_experience:
+          type: integer
+          example: 10
+        is_active:
+          type: boolean
+          example: true
+    example:
+      bio: "Expert in fades and beard grooming with 10 years of experience"
+      years_experience: 10
+      is_active: true
+
+responses:
+  200:
+    description: Employee updated successfully
+    schema:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        salon_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        bio:
+          type: string
+        years_experience:
+          type: integer
+        is_active:
+          type: boolean
+
+  400:
+    description: Validation error or no fields to update
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "No valid fields to update"
+
+  403:
+    description: Forbidden - salon ownership required
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Forbidden: You don't own this salon"
+
+  404:
+    description: Salon or barber not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Barber not found"
+
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred"
+
