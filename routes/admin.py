@@ -315,8 +315,18 @@ def calculate_daily_statistics():
         if cron_secret and cron_secret_env and cron_secret == cron_secret_env:
             # Authenticated via cron secret, proceed
             pass
+        elif cron_secret and not cron_secret_env:
+            # Cron secret provided but CRON_SECRET env var not set
+            return jsonify({
+                "error": "Configuration error: CRON_SECRET environment variable not set"
+            }), 500
+        elif cron_secret and cron_secret_env and cron_secret != cron_secret_env:
+            # Cron secret provided but doesn't match
+            return jsonify({
+                "error": "Unauthorized: Invalid cron secret"
+            }), 401
         else:
-            # Otherwise, require admin authentication
+            # No cron secret provided, require admin authentication
             # Manually verify JWT token and check admin role
             try:
                 from middleware.auth import verify_jwt_token
@@ -349,7 +359,9 @@ def calculate_daily_statistics():
             except Exception as e:
                 return jsonify({"error": f"Unauthorized: {str(e)}"}), 401
         
-        data = request.get_json() or {}
+        # Get JSON data, but don't fail if body is empty
+        # Use silent=True to return None instead of raising an error on empty/invalid JSON
+        data = request.get_json(silent=True) or {}
         date_str = data.get('date')
         
         target_date = None
