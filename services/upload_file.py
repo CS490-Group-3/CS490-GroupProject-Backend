@@ -87,3 +87,43 @@ class StorageService:
             "filepath": filename,
             "signed_url": signed["signedURL"]
         }
+
+    @staticmethod
+    def upload_customer_image(file, customer_id, salon_id=None):
+        """
+        Upload a customer image to Supabase Storage.
+        
+        Args:
+            file: File object to upload
+            customer_id: Customer's user ID
+            salon_id: Optional salon ID
+        
+        Returns:
+            Dict with filepath and signed_url
+        """
+        bucket_name = "customer-images"
+
+        ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+        filename = f"{customer_id}/{uuid.uuid4()}.{ext}"
+        if salon_id:
+            filename = f"{customer_id}/{salon_id}/{uuid.uuid4()}.{ext}"
+        
+        file_bytes = file.read()
+
+        res = supabase.storage.from_(bucket_name).upload(
+            filename,
+            file_bytes,
+            file_options={"content-type": file.mimetype}
+        )
+        if hasattr(res, "error") and res.error:
+            raise Exception(res.error.message)
+
+        signed = supabase.storage.from_(bucket_name).create_signed_url(
+            filename,
+            int(timedelta(days=7).total_seconds())
+        )
+
+        return {
+            "filepath": filename,
+            "signed_url": signed["signedURL"]
+        }

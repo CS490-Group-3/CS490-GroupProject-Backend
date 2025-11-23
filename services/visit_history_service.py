@@ -111,13 +111,27 @@ class VisitHistoryService:
                 images_response = images_query.order('uploaded_at', desc=True).execute()
                 if images_response.data:
                     images = images_response.data
-                    # Add image entries to timeline
+                    # Generate signed URLs for images (image_url stores filepath)
+                    from datetime import timedelta
                     for img in images:
+                        filepath = img.get('image_url')  # This is the filepath
+                        if filepath:
+                            try:
+                                signed = supabase.storage.from_('customer-images').create_signed_url(
+                                    filepath,
+                                    int(timedelta(days=7).total_seconds())
+                                )
+                                if not (hasattr(signed, 'error') and signed.error):
+                                    img['signed_url'] = signed.get('signedURL')
+                            except Exception:
+                                img['signed_url'] = None
+                        
+                        # Add image entries to timeline
                         visit_timeline.append({
                             'type': 'image',
                             'id': img.get('id'),
                             'date': img.get('uploaded_at') or img.get('created_at'),
-                            'image_url': img.get('image_url'),
+                            'image_url': img.get('signed_url') or img.get('image_url'),
                             'caption': img.get('caption'),
                             'salon_id': img.get('salon_id')
                         })

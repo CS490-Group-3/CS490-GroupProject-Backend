@@ -1,0 +1,55 @@
+---
+tags:
+  - Users
+summary: Delete customer image
+description: >
+  Delete an image uploaded by the current customer.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+    example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  - in: path
+    name: image_id
+    type: string
+    required: true
+    description: ID of the image to delete
+    example: "123e4567-e89b-12d3-a456-426614174000"
+responses:
+  200:
+    description: Image deleted successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Image deleted successfully"
+  400:
+    description: Bad request
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Image not found"
+  403:
+    description: Forbidden
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "You can only delete your own images"
+  401:
+    description: Unauthorized
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unauthorized"
+

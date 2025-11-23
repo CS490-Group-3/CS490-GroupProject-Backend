@@ -1,0 +1,91 @@
+---
+tags:
+  - Users
+summary: Upload customer images
+description: >
+  Allows customers to upload images to their visit history.
+  Images can be associated with a specific salon or be general.
+consumes:
+  - multipart/form-data
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+    example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  - in: formData
+    name: files
+    type: file
+    required: true
+    description: Image files to upload (can upload multiple)
+  - in: formData
+    name: salon_id
+    type: string
+    required: false
+    description: Optional salon ID to associate images with
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+  - in: formData
+    name: captions
+    type: array
+    items:
+      type: string
+    required: false
+    description: Optional captions for each image (one per file)
+    example: ["Great haircut!", "Before and after"]
+responses:
+  201:
+    description: Images uploaded successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Images uploaded successfully"
+        count:
+          type: integer
+          example: 2
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              customer_id:
+                type: string
+                format: uuid
+              salon_id:
+                type: string
+                format: uuid
+                nullable: true
+              image_url:
+                type: string
+              caption:
+                type: string
+                nullable: true
+              uploaded_at:
+                type: string
+                format: date-time
+              signed_url:
+                type: string
+  400:
+    description: Bad request
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "No files provided"
+  401:
+    description: Unauthorized
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unauthorized"
+
