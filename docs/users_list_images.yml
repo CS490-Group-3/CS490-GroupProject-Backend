@@ -1,0 +1,69 @@
+---
+tags:
+  - Users
+summary: List customer images
+description: >
+  Get all images uploaded by the current customer.
+  Can optionally filter by salon_id.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+    example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  - in: query
+    name: salon_id
+    type: string
+    required: false
+    description: Optional filter by salon ID
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+responses:
+  200:
+    description: Images retrieved successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Images retrieved successfully"
+        count:
+          type: integer
+          example: 5
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              customer_id:
+                type: string
+                format: uuid
+              salon_id:
+                type: string
+                format: uuid
+                nullable: true
+              image_url:
+                type: string
+              caption:
+                type: string
+                nullable: true
+              uploaded_at:
+                type: string
+                format: date-time
+              created_at:
+                type: string
+                format: date-time
+  401:
+    description: Unauthorized
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unauthorized"
+
