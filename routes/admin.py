@@ -10,6 +10,8 @@ from services.export_service import ExportService
 from middleware import role_required
 from datetime import datetime, date
 from typing import Optional
+import os
+import jwt
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
@@ -291,17 +293,62 @@ def get_platform_metrics():
 
 
 @admin_bp.route('/metrics/daily-statistics/calculate', methods=['POST'])
-@role_required(['admin'], verify_with_supabase=True)
 @swag_from("../docs/admin_calculate_daily_stats.yml")
 def calculate_daily_statistics():
     """
     Calculate and store daily statistics for a specific date.
     Can be called by scheduled jobs (cron) or manually.
     
+    Authentication:
+        - Admin role required (via Authorization header)
+        - OR cron secret token (via X-Cron-Secret header)
+    
     Body (optional):
         - date: Date to calculate for (YYYY-MM-DD), defaults to yesterday
     """
     try:
+        # Check for cron secret token (for scheduled jobs)
+        cron_secret = request.headers.get('X-Cron-Secret')
+        cron_secret_env = os.getenv('CRON_SECRET')
+        
+        # If cron secret is provided and matches, allow access
+        if cron_secret and cron_secret_env and cron_secret == cron_secret_env:
+            # Authenticated via cron secret, proceed
+            pass
+        else:
+            # Otherwise, require admin authentication
+            # Manually verify JWT token and check admin role
+            try:
+                from middleware.auth import verify_jwt_token
+                auth_header = request.headers.get('Authorization')
+                if not auth_header or not auth_header.startswith('Bearer '):
+                    return jsonify({"error": "Unauthorized: Missing or invalid Authorization header"}), 401
+                
+                token = auth_header.split(' ')[1]
+                decoded = verify_jwt_token(token)
+                
+                # Get user role from database
+                from config import supabase
+                user_id = decoded.get('sub')
+                user_response = supabase.table('user_details')\
+                    .select('role')\
+                    .eq('id', user_id)\
+                    .single()\
+                    .execute()
+                
+                if not user_response.data:
+                    return jsonify({"error": "Unauthorized: User not found"}), 401
+                
+                user_role = user_response.data.get('role')
+                if user_role != 'admin':
+                    return jsonify({"error": "Forbidden: Admin role required"}), 403
+            except jwt.ExpiredSignatureError:
+                return jsonify({"error": "Unauthorized: Token expired"}), 401
+            except jwt.InvalidTokenError:
+                return jsonify({"error": "Unauthorized: Invalid token"}), 401
+            except Exception as e:
+                return jsonify({"error": f"Unauthorized: {str(e)}"}), 401
+        
         data = request.get_json() or {}
         date_str = data.get('date')
         
