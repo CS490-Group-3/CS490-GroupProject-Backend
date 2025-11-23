@@ -26,3 +26,6 @@ pytest==8.3.3
 pytest-mock==3.14.0
 pytest-flask==1.3.0
 
+# PDF Export (optional - falls back to CSV if not installed)
+reportlab==4.0.9
+

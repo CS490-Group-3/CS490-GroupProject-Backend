@@ -1,0 +1,54 @@
+---
+tags:
+  - Admin
+summary: Get engagement metrics
+description: >
+  Retrieve engagement metrics for a date range including new users, appointments,
+  revenue, reviews, and engagement rates.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+  - in: query
+    name: start_date
+    required: true
+    schema:
+      type: string
+      format: date
+    description: Start date (YYYY-MM-DD)
+    example: "2024-01-01"
+  - in: query
+    name: end_date
+    required: true
+    schema:
+      type: string
+      format: date
+    description: End date (YYYY-MM-DD)
+    example: "2024-01-31"
+responses:
+  200:
+    description: Engagement metrics retrieved successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+        metrics:
+          type: object
+          properties:
+            period:
+              type: object
+            summary:
+              type: object
+            daily_breakdown:
+              type: array
+  400:
+    description: Bad request
+  403:
+    description: Forbidden
+  500:
+    description: Internal server error
+
