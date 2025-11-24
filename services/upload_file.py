@@ -49,7 +49,7 @@ class StorageService:
 
 
     @staticmethod
-    def regenerate_signed_url(filepath: str, expires_in_days: int = 365):
+    def regenerate_signed_url(filepath: str, expires_in_days: int = 365, BUCKET_NAME: str = "salon-documents"):
         try:
             seconds = int(timedelta(days=expires_in_days).total_seconds())
             res = supabase.storage.from_(BUCKET_NAME).create_signed_url(filepath, seconds)

@@ -48,7 +48,10 @@ def refresh_signed_url():
         if not filepath:
             return jsonify({"error": "Missing 'filepath'"}), 400
 
-        new_url = StorageService.regenerate_signed_url(filepath)
+        file_type = data.get("file_type", "salon-documents")
+        if file_type not in ["salon-documents", "salon-logos", "customer-images", "service-images", "review-images", "user-profile-images"]:
+            return jsonify({"error": "Invalid 'file_type'"}), 400
+        new_url = StorageService.regenerate_signed_url(filepath, BUCKET_NAME=file_type)
         return jsonify({
             "message": "Signed URL refreshed successfully",
             "signed_url": new_url

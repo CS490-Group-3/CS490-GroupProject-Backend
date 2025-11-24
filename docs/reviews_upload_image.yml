@@ -28,6 +28,13 @@ parameters:
       type: file
     required: true
     description: Multiple image file (PNG, JPG)
+  - in: formData
+    name: labels
+    type: array
+    items:
+      type: string
+    required: false
+    description: Optional labels corresponding to each uploaded file
 
 responses:
   200:
