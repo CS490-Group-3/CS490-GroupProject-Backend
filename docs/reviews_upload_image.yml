@@ -1,39 +1,52 @@
 ---
 tags:
-  - Reviews
-summary: Upload an image for a review.
-description: Upload a PNG or JPEG image to attach to a review.
+    - Reviews
+summary: Upload one or more images for a review.
+description: >
+    Allows an authenticated user to upload multiple PNG/JPG images for a review.
+    Optionally, labels (such as "before", "after") may be included for each file.
+
 consumes:
-  - multipart/form-data
+    - multipart/form-data
 produces:
-  - application/json
+    - application/json
 
 parameters:
-  - in: header
-    name: Authorization
-    type: string
-    required: true
-    description: Bearer access token
+    - in: header
+      name: Authorization
+      type: string
+      required: true
+      description: Bearer access token
 
-  - in: path
-    name: review_id
-    type: string
-    required: true
-    description: The ID of the review
+    - in: path
+      name: review_id
+      type: string
+      required: true
+      description: The ID of the review
 
-  - in: formData
-    name: file
-    type: file
-    required: true
-    description: The image file (PNG, JPG)
+    - in: formData
+      name: files
+      type: array
+      required: true
+      items:
+          type: file
+      description: One or more image files (PNG or JPG). Use "files" as the field name.
+
+    - in: formData
+      name: labels
+      type: array
+      required: false
+      items:
+          type: string
+      description: Optional labels for each image (e.g. "before", "after").
 
 responses:
-  200:
-    description: File uploaded successfully
-  400:
-    description: Missing file
-  403:
-    description: Unauthorized user
-  500:
-    description: Internal server error
+    200:
+        description: Images uploaded successfully
+    400:
+        description: Missing files
+    403:
+        description: Unauthorized user
+    500:
+        description: Internal server error
 
