@@ -22,10 +22,12 @@ parameters:
     description: The ID of the review
 
   - in: formData
-    name: file
-    type: file
+    name: files
+    type: array
+    items:
+      type: file
     required: true
-    description: The image file (PNG, JPG)
+    description: Multiple image file (PNG, JPG)
 
 responses:
   200:
