@@ -20,14 +20,14 @@ parameters:
     name: file_type
     type: string
     required: true
-    enum: [logo, license]
+    enum: [logo, license, profile]
     description: Type of file being uploaded
     example: logo
 
   - in: formData
     name: salon_id
     type: string
-    required: true
+    required: false
     description: The unique ID of the salon the file belongs to
     example: b534633a-23bc-4479-968f-8a004615821c
 
