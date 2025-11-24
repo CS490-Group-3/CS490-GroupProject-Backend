@@ -15,13 +15,16 @@ def upload_file(file_type):
         salon_id = request.form.get("salon_id")
         file = request.files.get("file")
 
-        if file_type not in ["logo", "license"]:
+        if file_type not in ["logo", "license", "profile"]:
             return jsonify({"error": "Invalid file type"}), 400
-        if not file or not salon_id:
+        if not file or (file_type != "profile" and not salon_id):
             return jsonify({"error": "Missing file or salon_id"}), 400
 
         file.filename = secure_filename(file.filename)
-        url = StorageService.upload_file(file, salon_id, file_type)
+        if file_type == "profile":
+            url = StorageService.upload_user_profile_image(file, user_id)
+        else:
+            url = StorageService.upload_file(file, salon_id, file_type)
 
         return jsonify({
             "message": "File uploaded successfully",

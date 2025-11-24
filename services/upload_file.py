@@ -127,3 +127,36 @@ class StorageService:
             "filepath": filename,
             "signed_url": signed["signedURL"]
         }
+    @staticmethod
+    def upload_user_profile_image(file, user_id):
+        """
+        Upload a user profile image to Supabase Storage.
+        
+        Args:
+            file: File object to upload
+            user_id: User's ID
+        
+        Returns:
+            Dict with filepath and signed_url
+        """
+        bucket_name = "user-profile-images"
+
+        ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+        filename = f"{user_id}/{uuid.uuid4()}.{ext}"
+        
+        file_bytes = file.read()
+
+        res = supabase.storage.from_(bucket_name).upload(
+            filename,
+            file_bytes,
+            file_options={"content-type": file.mimetype}
+        )
+        if hasattr(res, "error") and res.error:
+            raise Exception(res.error.message)
+
+        public_url = supabase.storage.from_(bucket_name).get_public_url(filename)
+
+        return {
+            "filepath": filename,
+            "public_url": public_url
+        }
