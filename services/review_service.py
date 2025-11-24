@@ -102,16 +102,22 @@ class ReviewService:
         return {"message": "Review deleted successfully"}
 
     @staticmethod
-    def get_reviews_for_salon(salon_id):
-        reviews = (
+    def get_reviews_for_salon(salon_id, rating=None):
+        query = (
             supabase.table("reviews")
             .select("*")
             .eq("salon_id", salon_id)
-            .order("created_at", desc=True)
-            .execute()
-            .data
         )
         
+        if rating and rating.lower() != "all":
+            try:
+                rating_value = int(rating)
+                if 1 <= rating_value <= 5:
+                    query = query.eq("rating", rating_value)
+            except ValueError:
+                pass 
+        reviews = query.order("created_at", desc=True).execute().data
+
         # Fetch responses for all reviews
         if reviews:
             review_ids = [r["id"] for r in reviews]

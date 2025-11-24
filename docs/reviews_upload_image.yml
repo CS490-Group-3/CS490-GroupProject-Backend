@@ -24,20 +24,20 @@ parameters:
       required: true
       description: The ID of the review
 
-  - in: formData
-    name: files
-    type: array
-    items:
+    - in: formData
+      name: files
+      type: array
+      items:
       type: file
-    required: true
-    description: Multiple image file (PNG, JPG)
-  - in: formData
-    name: labels
-    type: array
-    items:
-      type: string
-    required: false
-    description: Optional labels corresponding to each uploaded file
+      required: true
+      description: Multiple image file (PNG, JPG)
+    - in: formData
+      name: labels
+      type: array
+      items:
+        type: string
+      required: false
+      description: Optional labels corresponding to each uploaded file
 
 responses:
     200:

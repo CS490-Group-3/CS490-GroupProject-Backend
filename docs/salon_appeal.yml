@@ -1,48 +1,70 @@
 ---
 tags:
   - Salon
+
 summary: Submit an appeal for a rejected salon application
 description: >
-  Allows an authenticated **salon_owner** to appeal a previously rejected salon application.  
-  The owner can optionally resubmit updated salon details and new license or logo files.
+  Allows an authenticated salon_owner to appeal a previously rejected salon application.
+  Supports optional resubmission of updated fields and new logo/license uploads.
+
 consumes:
-  - application/json
   - multipart/form-data
 produces:
   - application/json
+
 parameters:
   - in: header
     name: Authorization
-    description: Bearer access token
     required: true
+    description: Bearer access token
     type: string
 
   - in: path
     name: salon_id
     type: string
     required: true
-    description: The unique ID of the salon being appealed
+    description: The salon ID being appealed
     example: b534633a-23bc-4479-968f-8a004615821c
 
+  # ---- Allowed editable fields ----
   - in: formData
-    name: updates
-    type: object
-    description: >
-      Optional salon fields to update before resubmitting (only name, description, address, phone_number, license_url, image_url are allowed)
-    example:
-      name: "Swag Shop Reloaded"
-      description: "Resubmitted application with corrected license info."
-      phone_number: "9735559999"
+    name: name
+    type: string
+    required: false
+    description: Optional updated salon name
+    example: "Swag Shop Reloaded"
 
+  - in: formData
+    name: description
+    type: string
+    required: false
+    description: Optional updated description
+    example: "Updated application with corrected license info."
+
+  - in: formData
+    name: address
+    type: string
+    required: false
+    example: "123 Main Street"
+
+  - in: formData
+    name: phone_number
+    type: string
+    required: false
+    example: "9735559999"
+
+  # ---- File uploads ----
   - in: formData
     name: logo
     type: file
-    description: Optional updated salon logo image
+    required: false
+    description: Optional updated salon logo
 
   - in: formData
     name: license
     type: file
-    description: Optional updated business license file
+    required: false
+    description: Optional updated business license
 
 responses:
   200:
@@ -56,22 +78,25 @@ responses:
         new_status:
           type: string
           example: "pending"
+
   400:
-    description: Appeal not allowed or invalid input
+    description: Bad request
     schema:
       type: object
       properties:
         error:
           type: string
-          example: "Appeals are only allowed for rejected salons (current status: 'approved')."
+          example: "Appeals are only allowed for rejected salons."
+
   403:
-    description: Unauthorized salon owner
+    description: Forbidden
     schema:
       type: object
       properties:
         error:
           type: string
           example: "You are not authorized to appeal this salon."
+
   404:
     description: Salon not found
     schema:
@@ -80,6 +105,7 @@ responses:
         error:
           type: string
           example: "Salon not found"
+
   500:
     description: Internal server error
     schema:
