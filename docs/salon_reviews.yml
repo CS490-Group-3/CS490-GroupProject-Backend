@@ -1,0 +1,77 @@
+---
+tags:
+  - Salon
+summary: List recent salon reviews
+description: >
+  Returns the latest reviews for a salon, including rating, text, and reviewer display name.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon ID to fetch reviews for
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+  - in: query
+    name: limit
+    type: integer
+    required: false
+    default: 6
+    description: Maximum number of reviews to return
+    example: 6
+
+responses:
+  200:
+    description: Reviews retrieved
+    schema:
+      type: object
+      properties:
+        reviews:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              stars:
+                type: integer
+                example: 5
+              text:
+                type: string
+                example: "Great cut and friendly staff!"
+              created_at:
+                type: string
+                format: date-time
+                example: "2024-06-10T14:30:00Z"
+              user:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: "Alex M."
+  400:
+    description: Invalid request or lookup failure
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Salon not found"
+  500:
+    description: Unexpected server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Database connection failed"

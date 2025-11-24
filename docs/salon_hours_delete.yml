@@ -1,0 +1,71 @@
+---
+tags:
+  - Salon
+summary: Delete hours for a single day
+description: >
+  Removes the hours entry for a specific day of the week. Owner or admin only.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon ID to update
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+  - in: path
+    name: day_of_week
+    type: integer
+    required: true
+    description: Day index (0 = Sunday ... 6 = Saturday)
+    example: 0
+
+responses:
+  200:
+    description: Day hours removed
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Salon day hours deleted"
+  400:
+    description: Validation error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "day_of_week must be an integer between 0 (Sunday) and 6 (Saturday)"
+  403:
+    description: Forbidden for non-owners
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Forbidden: You don't own this salon"
+  404:
+    description: Salon not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Salon not found"
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Database connection failed"

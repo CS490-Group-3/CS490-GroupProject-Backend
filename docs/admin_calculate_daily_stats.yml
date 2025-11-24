@@ -1,0 +1,41 @@
+---
+tags:
+  - Admin
+summary: Calculate daily statistics
+description: >
+  Calculate and store daily statistics for a specific date.
+  Can be called by scheduled jobs (cron) or manually.
+  Defaults to yesterday if no date provided.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+  - in: body
+    name: body
+    schema:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          description: Date to calculate for (YYYY-MM-DD), defaults to yesterday
+          example: "2024-01-15"
+responses:
+  200:
+    description: Daily statistics calculated successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+        statistics:
+          type: object
+  400:
+    description: Bad request
+  403:
+    description: Forbidden
+  500:
+    description: Internal server error
+

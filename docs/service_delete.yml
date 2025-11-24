@@ -1,0 +1,81 @@
+---
+tags:
+  - Services
+summary: Delete a service
+description: >
+  Deletes a service. Validates that the salon owner owns the salon
+  and the service belongs to the salon. Only salon owners and admins may perform this action.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: service_id
+    type: string
+    format: uuid
+    required: true
+    description: Service UUID to delete
+    example: "f9876543-21ba-fedc-3210-fedcba987654"
+
+  - in: query
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon UUID that owns the service
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+responses:
+  200:
+    description: Service deleted successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Service deleted successfully"
+
+  400:
+    description: Validation error or missing salon_id
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Missing salon_id query parameter"
+
+  403:
+    description: Forbidden - salon ownership required
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Forbidden: You don't own this salon"
+
+  404:
+    description: Service not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Service not found"
+
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred"
+

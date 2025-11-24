@@ -30,5 +30,3 @@ class SalonRegisterRequest(BaseModel):
         if not (phone or email):
             raise ValueError("At least one contact method (phone or email) is required.")
         return values
-
-

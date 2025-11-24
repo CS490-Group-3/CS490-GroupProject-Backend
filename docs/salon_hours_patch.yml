@@ -1,0 +1,111 @@
+---
+tags:
+  - Salon
+summary: Update or create hours for a single day
+description: >
+  Allows salon owners or admins to update one day's hours or mark it closed.  
+  Creates the day entry if it does not exist.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon ID to update
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+  - in: path
+    name: day_of_week
+    type: integer
+    required: true
+    description: Day index (0 = Sunday ... 6 = Saturday)
+    example: 1
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required: [is_closed]
+      properties:
+        open_time:
+          type: string
+          description: Required if `is_closed` is false. HH:MM or HH:MM:SS (24h).
+          example: "09:00"
+        close_time:
+          type: string
+          description: Required if `is_closed` is false. HH:MM or HH:MM:SS (24h).
+          example: "18:00"
+        is_closed:
+          type: boolean
+          description: Set true to mark the salon closed on this day.
+          example: false
+
+responses:
+  200:
+    description: Day hours saved
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Salon day hours saved"
+        hours:
+          type: object
+          properties:
+            salon_id:
+              type: string
+              format: uuid
+            day_of_week:
+              type: integer
+            open_time:
+              type: string
+              example: "09:00:00"
+            close_time:
+              type: string
+              example: "18:00:00"
+            is_closed:
+              type: boolean
+              example: false
+  400:
+    description: Validation error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "open_time and close_time are required when is_closed is false"
+  403:
+    description: Forbidden for non-owners
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Forbidden: You don't own this salon"
+  404:
+    description: Salon not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Salon not found"
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Database connection failed"

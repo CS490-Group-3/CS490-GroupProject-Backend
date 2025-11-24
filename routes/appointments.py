@@ -77,7 +77,15 @@ def list_appointments():
             # Fetch all appointments
             salons = get_owned_salons()
             salon_ids = [salon['id'] for salon in salons]
-            appointments, error = AppointmentService.get_all_salon_appointments(salon_ids, when, status, page, limit)
+            # If salon_id is provided in query, filter to that salon only
+            if salon_id and salon_id in salon_ids:
+                salon_ids = [salon_id]
+            # If customer_id is provided, filter by customer
+            if customer_id:
+                # Filter appointments by customer_id and salon_ids
+                appointments, error = AppointmentService.get_all_salon_appointments(salon_ids, when, status, page, limit, customer_id=customer_id)
+            else:
+                appointments, error = AppointmentService.get_all_salon_appointments(salon_ids, when, status, page, limit)
         elif user_role == 'barber':
             # fetch appointments for barber
             # must first lookup barber ID with user ID
@@ -299,24 +307,6 @@ def mark_completed(appointment_id):
     elif error:
         return jsonify({"error": error}), 400
     return jsonify(data), 200
-
-# create/update review
-@appointments_bp.route("/<appointment_id>/review", methods=["POST"])
-@login_required()
-@role_required(["customer"])
-def create_review(appointment_id):
-    user = get_current_user()
-    body = request.get_json() or {}
-    stars = body.get("stars")
-    comment = body.get("comment", "")
-    if stars is None:
-        return jsonify({"error": "stars is required"}), 400
-    review, error = AppointmentService.create_review(appointment_id, int(stars), comment, user=user)
-    if error == "Forbidden":
-        return jsonify({"error": error}), 403
-    elif error:
-        return jsonify({"error": error}), 400
-    return jsonify(review), 201
 
 #POST /<appointment_id>/running-late
 @appointments_bp.post("/<appointment_id>/running-late")

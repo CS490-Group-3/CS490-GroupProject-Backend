@@ -1,9 +1,22 @@
 from config import supabase
-from typing import Dict, Optional, Tuple
-from gotrue.errors import AuthApiError
-from datetime import time
+from typing import Dict, Optional, Tuple, List
+from datetime import time, datetime, timezone
+
+
 class ScheduleService:
-    
+    @staticmethod
+    def _to_utc_iso(dt_or_str):
+        """
+        Normalize incoming datetime (string or datetime) to an ISO UTC string.
+        """
+        if isinstance(dt_or_str, str):
+            dt = datetime.fromisoformat(dt_or_str.replace("Z", "+00:00"))
+        else:
+            dt = dt_or_str
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+
     @staticmethod
     def check_barber_exists(barber_id: str) -> bool:
         """
@@ -48,6 +61,12 @@ class ScheduleService:
                 start_time = start_time.strftime("%H:%M:%S")
             if isinstance(end_time, time):
                 end_time = end_time.strftime("%H:%M:%S")
+
+            # validate within salon hours
+            ok, err = ScheduleService._is_within_salon_hours(barber_id, day_of_week, start_time, end_time)
+            if not ok:
+                return None, err
+
             data = {
                 "barber_id": barber_id,
                 "day_of_week": day_of_week,
@@ -86,6 +105,26 @@ class ScheduleService:
             Tuple containing the updated availability dict or None, and an error message or None.
         """
         try:
+            # fetch existing to resolve barber_id/day if not passed
+            existing = (
+                supabase.table("barber_availability")
+                .select("barber_id,day_of_week,start_time,end_time")
+                .eq("id", availability_id)
+                .single()
+                .execute()
+            )
+            if getattr(existing, "error", None) or not existing.data:
+                return None, "Availability entry not found"
+
+            barber_id = existing.data["barber_id"]
+            day_of_week = update_data.get("day_of_week", existing.data["day_of_week"])
+            start_time = update_data.get("start_time", existing.data["start_time"])
+            end_time = update_data.get("end_time", existing.data["end_time"])
+
+            if start_time and end_time:
+                ok, err = ScheduleService._is_within_salon_hours(barber_id, day_of_week, start_time, end_time)
+                if not ok:
+                    return None, err
             
             response = supabase.table("barber_availability").update(update_data).eq("id", availability_id).execute()
             if not getattr(response, "data", None):
@@ -116,3 +155,235 @@ class ScheduleService:
         
         except Exception as e:
             return None, str(e)
+
+    @staticmethod
+    def _is_within_salon_hours(barber_id: str, day_of_week: int, start_time: str, end_time: str) -> Tuple[bool, Optional[str]]:
+        """
+        Ensure a barber availability window stays within the salon's hours for that day.
+        """
+        try:
+            barber_resp = (
+                supabase.table("barbers")
+                .select("salon_id")
+                .eq("id", barber_id)
+                .single()
+                .execute()
+            )
+            if getattr(barber_resp, "error", None) or not barber_resp.data:
+                return False, "Barber not found"
+
+            salon_id = barber_resp.data.get("salon_id")
+            hours_resp = (
+                supabase.table("salon_hours")
+                .select("open_time,close_time,is_closed,day_of_week")
+                .eq("salon_id", salon_id)
+                .eq("day_of_week", day_of_week)
+                .single()
+                .execute()
+            )
+            hours = hours_resp.data if not getattr(hours_resp, "error", None) else None
+            if not hours:
+                return False, "Salon hours not configured for that day"
+            if hours.get("is_closed"):
+                return False, "Salon is closed on that day"
+
+            salon_open = hours.get("open_time")
+            salon_close = hours.get("close_time")
+            if not (salon_open and salon_close):
+                return False, "Salon hours missing for that day"
+
+            if start_time < salon_open or end_time > salon_close:
+                return False, f"Availability must be within salon hours ({salon_open} - {salon_close})"
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    # -------- unavailability / blocking -----------
+    @staticmethod
+    def list_unavailability(
+        barber_id: str,
+        start_from: Optional[datetime] = None,
+        end_before: Optional[datetime] = None,
+    ) -> Tuple[Optional[List[dict]], Optional[str]]:
+        """
+        Fetch blocked (unavailability) entries for a barber.
+        """
+        try:
+            query = (
+                supabase.table("barber_unavailability")
+                .select("*")
+                .eq("barber_id", barber_id)
+                .order("start_datetime", desc=False)
+            )
+            if start_from:
+                query = query.gte("end_datetime", ScheduleService._to_utc_iso(start_from))
+            if end_before:
+                query = query.lt("start_datetime", ScheduleService._to_utc_iso(end_before))
+
+            response = query.execute()
+            return response.data or [], None
+        except Exception as e:
+            return None, str(e)
+
+    @staticmethod
+    def create_unavailability(
+        barber_id: str,
+        start_datetime,
+        end_datetime,
+        reason: Optional[str] = None,
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Block off a specific time window for a barber.
+        """
+        try:
+            start_iso = ScheduleService._to_utc_iso(start_datetime)
+            end_iso = ScheduleService._to_utc_iso(end_datetime)
+            if start_iso >= end_iso:
+                return None, "start_datetime must be before end_datetime"
+            # prevent overlapping with existing blocked windows
+            overlap = (
+                supabase.table("barber_unavailability")
+                .select("id")
+                .eq("barber_id", barber_id)
+                .lt("start_datetime", end_iso)
+                .gt("end_datetime", start_iso)
+                .execute()
+            )
+            if overlap.data:
+                return None, "Requested block overlaps an existing blocked time"
+            # prevent blocking on top of scheduled/confirmed appointments
+            appointments = (
+                supabase.table("appointments")
+                .select("id")
+                .eq("barber_id", barber_id)
+                .in_("status", ["scheduled", "confirmed"])
+                .lt("start_at", end_iso)
+                .gt("end_at", start_iso)
+                .execute()
+            )
+            if appointments.data:
+                return None, "There are scheduled appointments in that window. Cancel/reschedule them first."
+
+            payload = {
+                "barber_id": barber_id,
+                "start_datetime": start_iso,
+                "end_datetime": end_iso,
+                "reason": reason,
+            }
+            response = supabase.table("barber_unavailability").insert(payload).execute()
+            if not getattr(response, "data", None):
+                return None, f"Supabase insert failed (status {getattr(response, 'status_code', 'unknown')}): {response}"
+
+            return response.data[0], None
+        except Exception as e:
+            return None, str(e)
+
+    @staticmethod
+    def update_unavailability(
+        block_id: str,
+        barber_id: str,
+        updates: Dict,
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Update an existing blocked window.
+        """
+        try:
+            existing = (
+                supabase.table("barber_unavailability")
+                .select("*")
+                .eq("id", block_id)
+                .single()
+                .execute()
+            )
+            if getattr(existing, "error", None) or not existing.data:
+                return None, "Blocked time not found"
+            if existing.data.get("barber_id") != barber_id:
+                return None, "Forbidden"
+
+            start_iso = updates.get("start_datetime")
+            end_iso = updates.get("end_datetime")
+            if start_iso:
+                start_iso = ScheduleService._to_utc_iso(start_iso)
+            else:
+                start_iso = existing.data["start_datetime"]
+            if end_iso:
+                end_iso = ScheduleService._to_utc_iso(end_iso)
+            else:
+                end_iso = existing.data["end_datetime"]
+
+            if start_iso >= end_iso:
+                return None, "start_datetime must be before end_datetime"
+
+            reason = updates.get("reason", existing.data.get("reason"))
+            # prevent overlap with other blocks (excluding this one)
+            overlap = (
+                supabase.table("barber_unavailability")
+                .select("id")
+                .eq("barber_id", barber_id)
+                .neq("id", block_id)
+                .lt("start_datetime", end_iso)
+                .gt("end_datetime", start_iso)
+                .execute()
+            )
+            if overlap.data:
+                return None, "Updated block overlaps another blocked time"
+            # prevent conflicts with scheduled appointments
+            appointments = (
+                supabase.table("appointments")
+                .select("id")
+                .eq("barber_id", barber_id)
+                .in_("status", ["scheduled", "confirmed"])
+                .lt("start_at", end_iso)
+                .gt("end_at", start_iso)
+                .execute()
+            )
+            if appointments.data:
+                return None, "There are scheduled appointments in that window. Cancel/reschedule them first."
+
+            update_payload = {
+                "start_datetime": start_iso,
+                "end_datetime": end_iso,
+                "reason": reason,
+            }
+
+            response = (
+                supabase.table("barber_unavailability")
+                .update(update_payload)
+                .eq("id", block_id)
+                .execute()
+            )
+            if not getattr(response, "data", None):
+                return None, f"Supabase update failed (status {getattr(response, 'status_code', 'unknown')}): {response}"
+            return response.data[0], None
+        except Exception as e:
+            return None, str(e)
+
+    @staticmethod
+    def delete_unavailability(block_id: str, barber_id: str) -> Tuple[bool, Optional[str]]:
+        """
+        Delete an existing blocked window.
+        """
+        try:
+            existing = (
+                supabase.table("barber_unavailability")
+                .select("barber_id")
+                .eq("id", block_id)
+                .single()
+                .execute()
+            )
+            if getattr(existing, "error", None) or not existing.data:
+                return False, "Blocked time not found"
+            if existing.data.get("barber_id") != barber_id:
+                return False, "Forbidden"
+
+            response = (
+                supabase.table("barber_unavailability")
+                .delete()
+                .eq("id", block_id)
+                .execute()
+            )
+            if getattr(response, "error", None):
+                return False, f"Failed to delete block: {response.error}"
+            return True, None
+        except Exception as e:
+            return False, str(e)

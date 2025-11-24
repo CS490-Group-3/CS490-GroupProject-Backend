@@ -1,0 +1,58 @@
+---
+tags:
+  - Schedule
+summary: Delete a blocked window (unavailability)
+description: >
+  Removes an existing one-off blocked window for a barber.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: block_id
+    type: string
+    required: true
+    description: Block (barber_unavailability) UUID
+    example: "4f2e6d3b-7c0e-4f6b-9a12-1d2f3a4b5c6d"
+
+  - in: query
+    name: barber_id
+    type: string
+    required: false
+    description: Barber UUID (admins/owners may specify; barbers are forced to their own id)
+    example: "7a0f4671-38ca-4286-88c6-5a309a9ed7df"
+
+responses:
+  200:
+    description: Block deleted
+    schema:
+      type: object
+      properties:
+        message: { type: string, example: "Blocked time deleted successfully." }
+
+  400:
+    description: Validation error or block not found
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Blocked time not found" }
+
+  403:
+    description: Forbidden (role mismatch or barber mismatch)
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Forbidden" }
+
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Unexpected error" }

@@ -1,0 +1,23 @@
+---
+tags:
+  - Admin
+summary: Get platform metrics
+description: >
+  Retrieve current platform metrics snapshot including total users, salons,
+  appointments, and revenue.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+responses:
+  200:
+    description: Platform metrics retrieved successfully
+    schema:
+      type: object
+  403:
+    description: Forbidden
+  500:
+    description: Internal server error
+

@@ -24,21 +24,20 @@ parameters:
       required: true
       description: The ID of the review
 
-    - in: formData
-      name: files
-      type: array
-      required: true
-      items:
-          type: file
-      description: One or more image files (PNG or JPG). Use "files" as the field name.
-
-    - in: formData
-      name: labels
-      type: array
-      required: false
-      items:
-          type: string
-      description: Optional labels for each image (e.g. "before", "after").
+  - in: formData
+    name: files
+    type: array
+    items:
+      type: file
+    required: true
+    description: Multiple image file (PNG, JPG)
+  - in: formData
+    name: labels
+    type: array
+    items:
+      type: string
+    required: false
+    description: Optional labels corresponding to each uploaded file
 
 responses:
     200:

@@ -1,0 +1,65 @@
+---
+tags:
+  - Salon
+summary: Get salon tags
+description: >
+  Returns the unique service tags associated with a salon.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    description: Bearer access token
+    required: true
+    type: string
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon ID to fetch tags for
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+responses:
+  200:
+    description: Tags retrieved
+    schema:
+      type: object
+      properties:
+        tags:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                example: 12
+              salon_id:
+                type: string
+                format: uuid
+              tag_id:
+                type: integer
+                example: 3
+              tags:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: "Fade"
+  404:
+    description: Salon or tags not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "No tags found for salon"
+  500:
+    description: Unexpected server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Database connection failed"

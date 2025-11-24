@@ -71,8 +71,9 @@ class AppointmentService:
         """
         dt_utc = datetime.fromisoformat(utc_iso.replace("Z", "+00:00"))
         local = dt_utc.astimezone(ZoneInfo(tz_name))
-        # Python: Sunday=0 ... Saturday=6. Our DB uses 0..6 too.
-        return local.weekday(), local.strftime("%H:%M:%S")
+        # Python weekday(): Monday=0 .. Sunday=6. DB uses Sunday=0 .. Saturday=6.
+        dow = (local.weekday() + 1) % 7  # shift so Sunday=0
+        return dow, local.strftime("%H:%M:%S")
 
     @staticmethod
     def has_overlap(salon_id: str, barber_id: str, start_at, end_at, exclude_id: Optional[str] = None) -> bool:
@@ -135,7 +136,7 @@ class AppointmentService:
         if salon_ids:
             resp = (
                 supabase.table("salons")
-                .select("id,name,address,city,state,zip_code,phone,logo_url")
+                .select("id,name,address,city,state,zip_code,phone,logo_url,timezone")
                 .in_("id", list(salon_ids))
                 .execute()
             )
@@ -146,6 +147,7 @@ class AppointmentService:
                     "address": f"{row.get('address','')}, {row.get('city','')}, {row.get('state','')} {row.get('zip_code','')}".replace(" ,", ",").strip(" ,"),
                     "phone": row.get("phone"),
                     "logo_url": row.get("logo_url"),
+                    "timezone": row.get("timezone"),
                 }
 
         services = {}
@@ -224,12 +226,28 @@ class AppointmentService:
                 .in_("appointment_id", appointment_ids)
                 .execute()
             )
+            review_ids = [row["id"] for row in (rev_resp.data or []) if row.get("id")]
+            responses_map = {}
+            if review_ids:
+                responses_resp = (
+                    supabase.table("review_responses")
+                    .select("*")
+                    .in_("review_id", review_ids)
+                    .execute()
+                )
+                responses_map = {r["review_id"]: r for r in (responses_resp.data or [])}
+            
             for row in rev_resp.data or []:
-                reviews_map[row["appointment_id"]] = {
+                review_data = {
                     "id": row.get("id"),
                     "stars": row.get("rating"),
                     "text": row.get("comment"),
+                    "rating": row.get("rating"),
                 }
+                # Attach response if it exists
+                if row.get("id") in responses_map:
+                    review_data["response"] = responses_map[row.get("id")]
+                reviews_map[row["appointment_id"]] = review_data
 
         customers = {}
         if customer_ids:
@@ -645,7 +663,8 @@ class AppointmentService:
             if error:
                 return None, error
             duration_minutes = int(service.get("duration_minutes") or 30)
-            slot_length = timedelta(minutes=duration_minutes)
+            service_length = timedelta(minutes=duration_minutes)
+            step = timedelta(minutes=15)  # expose 15-min selectable grid
 
             tz_name = AppointmentService._get_salon_timezone(salon_id)
             tz = ZoneInfo(tz_name)
@@ -657,7 +676,7 @@ class AppointmentService:
             day_start_local = datetime.combine(day_local.date(), time(0, 0), tz)
             day_end_local = day_start_local + timedelta(days=1)
 
-            dow = day_local.weekday()
+            dow = (day_local.weekday() + 1) % 7  # shift to Sunday=0 .. Saturday=6
             availability = (
                 supabase.table("barber_availability")
                 .select("start_time,end_time,is_active")
@@ -720,24 +739,24 @@ class AppointmentService:
                 window_start = datetime.combine(day_local.date(), start_time, tz)
                 window_end = datetime.combine(day_local.date(), end_time, tz)
                 current = window_start
-                while current + slot_length <= window_end:
+                while current + service_length <= window_end:
                     slot_start_utc = current.astimezone(timezone.utc)
-                    slot_end_utc = (current + slot_length).astimezone(timezone.utc)
+                    slot_end_utc = (current + service_length).astimezone(timezone.utc)
                     if slot_start_utc < now_utc:
-                        current += slot_length
+                        current += step
                         continue
                     if any(u_start < slot_end_utc and u_end > slot_start_utc for u_start, u_end in unavail):
-                        current += slot_length
+                        current += step
                         continue
                     if any(b_start < slot_end_utc and b_end > slot_start_utc for b_start, b_end in booked):
-                        current += slot_length
+                        current += step
                         continue
                     slots.append({
                         "start_at": slot_start_utc.isoformat(),
                         "end_at": slot_end_utc.isoformat(),
                         "label": current.strftime("%I:%M %p").lstrip("0") or current.strftime("%H:%M"),
                     })
-                    current += slot_length
+                    current += step
             return slots, None
         except Exception as e:
             return None, str(e)
@@ -817,8 +836,10 @@ class AppointmentService:
                                    when: str = "all",
                                    status=None,
                                    page: int = 1,
-                                   limit: int = 20):
+                                   limit: int = 20,
+                                   customer_id: Optional[str] = None):
         # fetches all appointments for a salon (supports upcoming/past/all)
+        # If customer_id is provided, filters by customer
         try:
             query = (
                 supabase.table("appointments")
@@ -826,6 +847,8 @@ class AppointmentService:
                 .in_("salon_id", salon_ids)
                 .order("start_at", desc=False)
             )
+            if customer_id:
+                query = query.eq("customer_id", customer_id)
             query = AppointmentService._apply_filters(query, when, status)
             query = AppointmentService._paginate(query, page, limit)
             response = query.execute()
@@ -860,57 +883,3 @@ class AppointmentService:
             return None, response.error.message
         data = AppointmentService._hydrate_appointments(response.data or [])
         return data, None
-
-    @staticmethod
-    def create_review(appointment_id: str, rating: int, comment: str, *, user: dict):
-        if rating < 1 or rating > 5:
-            return None, "Rating must be between 1 and 5"
-
-        current, error = AppointmentService.get_by_id(appointment_id, user=user)
-        if error:
-            return None, error
-        if current.get("customer_id") != user.get("sub"):
-            return None, "Forbidden"
-        if current.get("status") not in ("completed",):
-            return None, "Only completed appointments can be reviewed"
-
-        timestamp = datetime.now(timezone.utc).isoformat()
-        payload = {
-            "rating": rating,
-            "comment": comment,
-            "updated_at": timestamp,
-        }
-        existing = (
-            supabase.table("reviews")
-            .select("id")
-            .eq("appointment_id", appointment_id)
-            .single()
-            .execute()
-        )
-        if existing.data:
-            response = (
-                supabase.table("reviews")
-                .update(payload)
-                .eq("appointment_id", appointment_id)
-                .execute()
-            )
-        else:
-            payload.update({
-                "appointment_id": appointment_id,
-                "salon_id": current.get("salon_id"),
-                "user_id": user.get("sub"),
-                "created_at": timestamp,
-            })
-            response = supabase.table("reviews").insert(payload).execute()
-
-        if getattr(response, "error", None):
-            return None, response.error.message
-
-        review_row = (
-            supabase.table("reviews")
-            .select("id,rating,comment,created_at")
-            .eq("appointment_id", appointment_id)
-            .single()
-            .execute()
-        )
-        return review_row.data, None

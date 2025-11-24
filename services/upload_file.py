@@ -8,7 +8,7 @@ from datetime import timedelta
 
 class StorageService:
     @staticmethod
-    def upload_file(file, salon_id, file_type):
+    def upload_file(file, salon_id, file_type, expires_in_days: int = 365):
         """
         Upload file to Supabase Storage and return a signed URL.
         file_type: 'license' or 'logo'
@@ -24,23 +24,32 @@ class StorageService:
         filename = f"{salon_id}/{file_type}/{file.filename}"
         file_bytes = file.read()
 
-        res = supabase.storage.from_(bucket_name).upload(filename, file_bytes)
+        file_opts = {
+            "content-type": file.mimetype or "application/octet-stream",
+            "upsert": "true",
+        }
+
+        res = supabase.storage.from_(bucket_name).upload(filename, file_bytes, file_options=file_opts)
         if hasattr(res, "error") and res.error:
-            raise Exception(res.error.message)
+            raise Exception(f"storage upload failed ({bucket_name}/{filename}): {res.error.message}")
+        else:
+            print(f"[storage upload] success bucket={bucket_name} path={filename}")
 
         # Generate signed URL (valid for 7 days)
         signed = supabase.storage.from_(bucket_name).create_signed_url(
             filename,
-            int(timedelta(days=7).total_seconds())
+            int(timedelta(days=expires_in_days).total_seconds())
         )
         if hasattr(signed, "error") and signed.error:
-            raise Exception(signed.error.message)
+            raise Exception(f"storage signed url failed ({bucket_name}/{filename}): {signed.error.message}")
+        else:
+            print(f"[storage signed url] success bucket={bucket_name} path={filename}")
 
         return signed["signedURL"]
 
 
     @staticmethod
-    def regenerate_signed_url(filepath: str, expires_in_days: int = 7):
+    def regenerate_signed_url(filepath: str, expires_in_days: int = 365, BUCKET_NAME: str = "salon-documents"):
         try:
             seconds = int(timedelta(days=expires_in_days).total_seconds())
             res = supabase.storage.from_(BUCKET_NAME).create_signed_url(filepath, seconds)
@@ -77,4 +86,77 @@ class StorageService:
         return {
             "filepath": filename,
             "signed_url": signed["signedURL"]
+        }
+
+    @staticmethod
+    def upload_customer_image(file, customer_id, salon_id=None):
+        """
+        Upload a customer image to Supabase Storage.
+        
+        Args:
+            file: File object to upload
+            customer_id: Customer's user ID
+            salon_id: Optional salon ID
+        
+        Returns:
+            Dict with filepath and signed_url
+        """
+        bucket_name = "customer-images"
+
+        ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+        filename = f"{customer_id}/{uuid.uuid4()}.{ext}"
+        if salon_id:
+            filename = f"{customer_id}/{salon_id}/{uuid.uuid4()}.{ext}"
+        
+        file_bytes = file.read()
+
+        res = supabase.storage.from_(bucket_name).upload(
+            filename,
+            file_bytes,
+            file_options={"content-type": file.mimetype}
+        )
+        if hasattr(res, "error") and res.error:
+            raise Exception(res.error.message)
+
+        signed = supabase.storage.from_(bucket_name).create_signed_url(
+            filename,
+            int(timedelta(days=7).total_seconds())
+        )
+
+        return {
+            "filepath": filename,
+            "signed_url": signed["signedURL"]
+        }
+    @staticmethod
+    def upload_user_profile_image(file, user_id):
+        """
+        Upload a user profile image to Supabase Storage.
+        
+        Args:
+            file: File object to upload
+            user_id: User's ID
+        
+        Returns:
+            Dict with filepath and signed_url
+        """
+        bucket_name = "user-profile-images"
+
+        ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+        filename = f"{user_id}/{uuid.uuid4()}.{ext}"
+        
+        file_bytes = file.read()
+
+        res = supabase.storage.from_(bucket_name).upload(
+            filename,
+            file_bytes,
+            file_options={"content-type": file.mimetype}
+        )
+        if hasattr(res, "error") and res.error:
+            raise Exception(res.error.message)
+
+        public_url = supabase.storage.from_(bucket_name).get_public_url(filename)
+
+        return {
+            "filepath": filename,
+            "public_url": public_url
         }

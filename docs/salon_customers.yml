@@ -1,0 +1,88 @@
+---
+tags:
+  - Salon
+summary: Get all customers for a salon
+description: >
+  Returns all customers who have appointments at a salon, sorted by visit count
+  (completed appointments). Only salon owners and admins may access this endpoint.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon UUID
+    example: "b534633a-23bc-4479-968f-8a004615821c"
+
+responses:
+  200:
+    description: List of customers sorted by visit count
+    schema:
+      type: object
+      properties:
+        customers:
+          type: array
+          items:
+            type: object
+            properties:
+              user_id:
+                type: string
+                format: uuid
+                example: "c1234567-89ab-cdef-0123-456789abcdef"
+              first_name:
+                type: string
+                example: "John"
+              last_name:
+                type: string
+                example: "Doe"
+              email:
+                type: string
+                format: email
+                example: "john.doe@example.com"
+              profile_image_url:
+                type: string
+                nullable: true
+                example: "https://example.com/profile.jpg"
+              visit_count:
+                type: integer
+                description: Number of completed appointments
+                example: 5
+
+  403:
+    description: Forbidden - salon ownership required
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Forbidden: You don't own this salon"
+
+  404:
+    description: Salon not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Salon not found"
+
+  500:
+    description: Server error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unexpected error occurred"
+
