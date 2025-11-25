@@ -8,6 +8,7 @@ def notify(
     event_type=None,
     title=None,
     message_template=None,
+    message_templates=None,
     related_key=None,
     schedule_func=None,
 ):
@@ -61,9 +62,24 @@ def notify(
                         **payload,  
                         **kwargs,   
                     }
+                    # Extract nested appointment values into context if available
+                    if "appointment" in payload:
+                        appt = payload["appointment"]
+                        if "salon" in appt and "name" in appt["salon"]:
+                            context["salon_name"] = appt["salon"]["name"]
+                        if "service" in appt and "name" in appt["service"]:
+                            context["service_name"] = appt["service"]["name"]
+                        if "start_at" in appt:
+                            context["start_at"] = appt["start_at"]
+                        if "end_at" in appt:
+                            context["end_at"] = appt["end_at"]
 
                     related_id = None
-                    if related_key and related_key in kwargs:
+                    if "id" in payload:
+                        related_id = payload["id"]
+                    elif "appointment" in payload and "id" in payload["appointment"]:
+                        related_id = payload["appointment"]["id"]
+                    elif related_key and related_key in kwargs:
                         related_id = kwargs[related_key]
                     elif "salon_id" in kwargs:
                         related_id = kwargs["salon_id"]
@@ -73,14 +89,15 @@ def notify(
                         related_id = kwargs["user_id"]
 
                     # --- Format message using template ---
+                    # Determine template for this recipient
                     if message_template:
                         try:
                             message = message_template.format(**context)
-                        except KeyError as e:
-                            print(f"[notify] Missing key {e} in context; using raw message template.")
+                        except KeyError:
                             message = message_template
                     else:
                         message = "A new event occurred."
+
 
 
                     try:
@@ -90,6 +107,7 @@ def notify(
                             title=title or "System Notification",
                             message=message,
                             related_id=related_id,
+                            messages_by_recipient=message_templates
                         )
 
                     except Exception as e:

@@ -1,48 +1,51 @@
 ---
 tags:
-  - Reviews
-summary: Upload an image for a review.
-description: Upload a PNG or JPEG image to attach to a review.
+    - Reviews
+summary: Upload one or more images for a review.
+description: >
+    Allows an authenticated user to upload multiple PNG/JPG images for a review.
+    Optionally, labels (such as "before", "after") may be included for each file.
+
 consumes:
-  - multipart/form-data
+    - multipart/form-data
 produces:
-  - application/json
+    - application/json
 
 parameters:
-  - in: header
-    name: Authorization
-    type: string
-    required: true
-    description: Bearer access token
-
-  - in: path
-    name: review_id
-    type: string
-    required: true
-    description: The ID of the review
-
-  - in: formData
-    name: files
-    type: array
-    items:
-      type: file
-    required: true
-    description: Multiple image file (PNG, JPG)
-  - in: formData
-    name: labels
-    type: array
-    items:
+    - in: header
+      name: Authorization
       type: string
-    required: false
-    description: Optional labels corresponding to each uploaded file
+      required: true
+      description: Bearer access token
+
+    - in: path
+      name: review_id
+      type: string
+      required: true
+      description: The ID of the review
+
+    - in: formData
+      name: files
+      type: array
+      items:
+      type: file
+      required: true
+      description: Multiple image file (PNG, JPG)
+    - in: formData
+      name: labels
+      type: array
+      items:
+        type: string
+      required: false
+      description: Optional labels corresponding to each uploaded file
 
 responses:
-  200:
-    description: File uploaded successfully
-  400:
-    description: Missing file
-  403:
-    description: Unauthorized user
-  500:
-    description: Internal server error
+    200:
+        description: Images uploaded successfully
+    400:
+        description: Missing files
+    403:
+        description: Unauthorized user
+    500:
+        description: Internal server error
 

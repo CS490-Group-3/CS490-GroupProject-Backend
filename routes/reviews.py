@@ -94,6 +94,7 @@ def delete_review(review_id):
 @login_required()
 @swag_from("../docs/reviews_list_salon.yml")
 def get_salon_reviews(salon_id):
-    reviews = ReviewService.get_reviews_for_salon(salon_id)
+    rating = request.args.get("rating")
+    reviews = ReviewService.get_reviews_for_salon(salon_id, rating=rating)
     return jsonify(reviews), 200
 

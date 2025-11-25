@@ -120,6 +120,22 @@ def list_appointments():
 @appointments_bp.route("/", methods=["POST"])
 @login_required()
 @role_required(["customer", "salon_owner", "barber", "admin"])
+@notify(
+    recipients=["user", "barber"],            
+    event_type="appointment_creation",
+    title="New Appointment Created",
+    message_templates={
+        "user": (
+            "Your appointment has been sent out for confirmation "
+        ),
+        "barber": (
+            "A new appointment has been assigned to you scheduled for  {start_at}. Make sure to confirm or deny"
+            
+        ),
+    },
+    related_key="id",
+    schedule_func=NotificationService.schedule_upcoming_appointment
+)
 @swag_from("../docs/create_appointment.yml")
 def create_appointment():
     """Create a new appointment (booking)."""
@@ -143,11 +159,10 @@ def create_appointment():
 @role_required(['customer', 'admin', 'salon_owner', 'barber'])
 @notify(
     recipients=["barber", "user"], 
-    event_type="appointment_confirmation",
+    event_type="appointment_creation",
     title="Appointment Updated",
     message_template="The appointment at {salon_name} for {service_name} has been updated.",
     schedule_func=NotificationService.schedule_upcoming_appointment, 
-    related_key="appointment_id"
 )#notify user and barber upon update 
 @swag_from("../docs/update_appointment.yml")
 def update_appointment():
@@ -190,6 +205,14 @@ def update_appointment():
 @login_required()
 @role_required(["customer", "salon_owner", "barber", "admin"])
 @swag_from("../docs/cancel_appointment.yml")
+@notify(
+    recipients=["barber", "user"],
+    event_type="appointment_cancellation",
+    title="Appointment Cancelled",
+    message_template="The appointment at {salon_name} for {service_name} has been cancelled.",
+    related_key="appointment_id",
+    schedule_func=None 
+)
 def cancel_appointment(appointment_id):
     """
     Cancel an appointment.

@@ -1,31 +1,74 @@
 ---
 tags:
   - Reviews
+
 summary: Get all reviews for a salon
 description: >
-  Returns every review associated with a salon, ordered by newest first.
+  Fetch every review associated with a salon, ordered by newest first.
+  Optionally filter by star rating (1–5).  
+  Use rating=all or omit the parameter to return all reviews.
+
 produces:
   - application/json
 
 parameters:
   - in: header
     name: Authorization
-    description: Bearer access token
-    required: true
     type: string
+    required: true
+    description: Bearer access token
 
   - in: path
     name: salon_id
     type: string
     format: uuid
     required: true
-    description: ID of the salon to fetch reviews for
+    description: ID of the salon whose reviews are being retrieved
+
+  - in: query
+    name: rating
+    type: string
+    required: false
+    description: >
+      Optional filter for star rating (1–5) or "all".  
+      Example: ?rating=5 → returns only 5-star reviews.
 
 responses:
   200:
-    description: Salon reviews returned
+    description: Successfully returned salon reviews
+    schema:
+      type: array
+      items:
+        type: object
+        properties:
+          id:
+            type: string
+            example: "b41455e5-f3f2-4773-ba71-d7bba6df6981"
+          customer_id:
+            type: string
+            example: "e1987db1-69bb-47a8-8d2b-e0d6fb6a8c52"
+          stars:
+            type: integer
+            example: 5
+          comment:
+            type: string
+            example: "Amazing service, will be back!"
+          created_at:
+            type: string
+            example: "2024-01-15T10:35:21.000Z"
+          response:
+            type: object
+            description: Optional owner reply to this review
+            properties:
+              review_id:
+                type: string
+              message:
+                type: string
+                example: "Thank you for your feedback!"
+
   404:
     description: Salon not found
+
   500:
     description: Internal server error
 

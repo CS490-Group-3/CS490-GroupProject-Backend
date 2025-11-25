@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from config import supabase
 import json
 from flask import jsonify
-
+import requests
 
 def serialize(row):
     for key, value in row.items():
@@ -14,7 +14,7 @@ def serialize(row):
 
 class NotificationService:
     @staticmethod
-    def broadcast(recipients, event_type, title, message, related_id=None):
+    def broadcast(recipients, event_type, title, message, related_id=None, messages_by_recipient=None):
         """
         Send notifications to given recipients.
 
@@ -24,19 +24,24 @@ class NotificationService:
         message: formatted string, may contain placeholders like {salon_name}
         related_id: UUID of related record (e.g., salon_id, appointment_id)
         """
+
         data = []
 
         for r in recipients:
+            recipient_message = (
+            messages_by_recipient.get(r, message)
+            if messages_by_recipient else message
+        )
             # --- Specific user UUID ---
             if isinstance(r, str) and len(r) > 20 and "-" in r:
-                data.append(NotificationService._record(r, event_type, title, message, related_id))
+                data.append(NotificationService._record(r, event_type, title,recipient_message, related_id))
                 continue
 
             # --- Admins ---
             if r == "admins":
                 admins = supabase.table("user_profiles").select("user_id").eq("role", "admin").execute()
                 for admin in admins.data:
-                    data.append(NotificationService._record(admin["user_id"], event_type, title, message, related_id))
+                    data.append(NotificationService._record(admin["user_id"], event_type, title,recipient_message, related_id))
                 continue
 
             # --- Salon Owner ---
@@ -45,7 +50,7 @@ class NotificationService:
                 if salon.data:
                     owner_id = salon.data["owner_id"]
                     salon_name = salon.data.get("name", "")
-                    formatted_msg = message.format(salon_name=salon_name) if "{salon_name" in message else message
+                    formatted_msg = recipient_message.format(salon_name=salon_name) if "{salon_name" in recipient_message else recipient_message
                     data.append(NotificationService._record(owner_id, event_type, title, formatted_msg, related_id))
                 continue
 
@@ -53,10 +58,27 @@ class NotificationService:
             if r == "user" and related_id:
                 appt = supabase.table("appointments").select("customer_id").eq("id", related_id).single().execute()
                 if appt.data:
-                    data.append(NotificationService._record(appt.data["customer_id"], event_type, title, message, related_id))
+                    data.append(NotificationService._record(appt.data["customer_id"], event_type, title, recipient_message, related_id))
+
+                continue
+            # --- Appointment Barber ---
+            if r == "barber" and related_id:
+                appt = supabase.table("appointments").select("barber_id").eq("id", related_id).single().execute()
+                if appt.data:
+                    barber_profile_id = appt.data["barber_id"]
+
+                    barber_profile = supabase.table("barbers").select("user_id").eq("id", barber_profile_id).single().execute()
+
+                    if barber_profile.data:
+                        barber_user_id = barber_profile.data["user_id"]
+                    data.append(
+                        NotificationService._record(barber_user_id, event_type, title, recipient_message, related_id)
+                    )
+
                 continue
 
         if data:
+
             supabase.table("notifications").insert(data).execute()
 
             for notif in data:
@@ -69,7 +91,7 @@ class NotificationService:
         Send a transactional email (confirmation/reschedule) using Supabase function or SMTP.
         """
         try:
-            user = supabase.table("user_details").select("email").eq("user_id", notif["user_id"]).single().execute()
+            user = supabase.table("user_details").select("email").eq("id", notif["user_id"]).single().execute()
             if not user.data or not user.data.get("email"):
                 return
 
@@ -100,7 +122,7 @@ class NotificationService:
         # --- Fetch appointment details ---
         appt = (
             supabase.table("appointments")
-            .select("id, user_id, barber_id, salon_id, service_id, scheduled_at")
+            .select("id, customer_id, barber_id, salon_id, service_id, start_at")
             .eq("id", appointment_id)
             .single()
             .execute()
@@ -131,7 +153,7 @@ class NotificationService:
         service_name = service.data["name"] if service.data else "Service"
 
         # --- Build reminder times ---
-        appt_time = datetime.fromisoformat(appt_data["scheduled_at"].replace("Z", "+00:00"))
+        appt_time = datetime.fromisoformat(appt_data["start_at"].replace("Z", "+00:00"))
         reminders = [
             ("Appointment tomorrow", appt_time - timedelta(days=1)),
             ("Appointment in 1 hour", appt_time - timedelta(hours=1)),
@@ -139,7 +161,7 @@ class NotificationService:
 
         # --- Recipient: customer ---
         data = []
-        customer_id = appt_data.get("user_id")
+        customer_id = appt_data.get("customer_id")
         if customer_id:
             for label, sched_time in reminders:
                 message = f"Reminder: Appointment at {salon_name} for {service_name} {label.lower()}."
@@ -158,22 +180,25 @@ class NotificationService:
                 )
 
         # --- Barber-only 30-minute reminder ---
-        barber_id = appt_data.get("barber_id")
-        if barber_id:
-            thirty_min_before = appt_time - timedelta(minutes=30)
-            data.append(
-                {
-                    "id": str(uuid.uuid4()),
-                    "user_id": barber_id,
-                    "notification_type": "appointment_reminder",
-                    "title": "Upcoming Appointment",
-                    "message": f"Reminder: Appointment at {salon_name} for {service_name} in 30 minutes.",
-                    "status": "pending",
-                    "related_id": appointment_id,
-                    "created_at": datetime.utcnow().isoformat(),
-                    "scheduled_for": thirty_min_before.isoformat(),
-                }
-            )
+        barber_profile_id = appt_data.get("barber_id")
+        if barber_profile_id:
+            barber_profile = supabase.table("barbers").select("user_id").eq("id", barber_profile_id).single().execute()
+            if barber_profile.data:
+                barber_user_id = barber_profile.data["user_id"]
+                thirty_min_before = appt_time - timedelta(minutes=30)
+                data.append(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "user_id": barber_user_id,
+                        "notification_type": "appointment_reminder",
+                        "title": "Upcoming Appointment",
+                        "message": f"Reminder: Appointment at {salon_name} for {service_name} in 30 minutes.",
+                        "status": "pending",
+                        "related_id": appointment_id,
+                        "created_at": datetime.utcnow().isoformat(),
+                        "scheduled_for": thirty_min_before.isoformat(),
+                    }
+                )
 
         # --- Insert all notifications ---
         if data:
@@ -199,8 +224,16 @@ class NotificationService:
         if not offer.data:
             print(f"[notify_promotional_offer] Offer {offer_id} not found.")
             return
-
         salon_id = offer.data["salon_id"]
+
+        salon = (
+        supabase.table("salons")
+        .select("name")
+        .eq("id", salon_id)
+        .single()
+        .execute()
+        )
+        salon_name = salon.data["name"] 
         title = offer.data["title"]
         description = offer.data["description"]
         now = datetime.utcnow().isoformat()
@@ -227,7 +260,7 @@ class NotificationService:
                 .eq("salon_id", salon_id)
                 .execute()
             )
-            user_ids = {b["user_id"] for b in (bookings.data or [])} | {
+            user_ids = {b["customer_id"] for b in (bookings.data or [])} | {
                 l["user_id"] for l in (loyalty.data or [])
             }
 
@@ -253,7 +286,7 @@ class NotificationService:
                 "id": str(uuid.uuid4()),
                 "user_id": uid,
                 "notification_type": "promotional_offer",
-                "title": f"New Offer: {title}",
+                "title": f"New Promotional Offer at {salon_name}: {title}",
                 "message": description,
                 "status": "pending",
                 "related_id": offer_id,
