@@ -108,14 +108,15 @@ class ReviewService:
             .select("*")
             .eq("salon_id", salon_id)
         )
-        
-        if rating and rating.lower() != "all":
-            try:
-                rating_value = int(rating)
-                if 1 <= rating_value <= 5:
-                    query = query.eq("rating", rating_value)
-            except ValueError:
-                pass 
+        if rating is not None:
+            rating_str = str(rating).lower().strip()
+            if rating_str != "all":
+                try:
+                    rating_value = int(rating_str)
+                    if 1 <= rating_value <= 5:
+                        query = query.eq("rating", rating_value)
+                except ValueError:
+                    pass 
         reviews = query.order("created_at", desc=True).execute().data
 
         # Fetch responses for all reviews
