@@ -14,7 +14,7 @@ def serialize(row):
 
 class NotificationService:
     @staticmethod
-    def broadcast(recipients, event_type, title, message, related_id=None, messages_by_recipient=None):
+    def broadcast(recipients, event_type, title, message, related_id=None, messages_by_recipient=None, context=None):
         """
         Send notifications to given recipients.
 
@@ -24,14 +24,74 @@ class NotificationService:
         message: formatted string, may contain placeholders like {salon_name}
         related_id: UUID of related record (e.g., salon_id, appointment_id)
         """
-
+        context = context or {}
         data = []
-
+        try:
+            message = message.format(**context)
+        except Exception:
+            pass
         for r in recipients:
             recipient_message = (
             messages_by_recipient.get(r, message)
             if messages_by_recipient else message
-        )
+            )
+            if "{salon_name}" in recipient_message and related_id:
+                try:
+                    salon_lookup = (
+                        supabase.table("appointments")
+                        .select("salon_id")
+                        .eq("id", related_id)
+                        .single()
+                        .execute()
+                    )
+
+                    if salon_lookup.data and salon_lookup.data.get("salon_id"):
+                        salon_id = salon_lookup.data["salon_id"]
+
+                        salon = (
+                            supabase.table("salons")
+                            .select("name")
+                            .eq("id", salon_id)
+                            .single()
+                            .execute()
+                        )
+
+                        if salon.data:
+                            context["salon_name"] = salon.data["name"]
+
+                except Exception as e:
+                    print(f"[notify] Failed to resolve salon_name: {e}")
+            if "{service_name}" in recipient_message and related_id:
+                try:
+                    svc_lookup = (
+                        supabase.table("appointments")
+                        .select("service_id")
+                        .eq("id", related_id)
+                        .single()
+                        .execute()
+                    )
+
+                    if svc_lookup.data and svc_lookup.data.get("service_id"):
+                        service_id = svc_lookup.data["service_id"]
+
+                        service = (
+                            supabase.table("services")
+                            .select("name")
+                            .eq("id", service_id)
+                            .single()
+                            .execute()
+                        )
+
+                        if service.data:
+                            context["service_name"] = service.data["name"]
+
+                except Exception as e:
+                    print(f"[notify] Failed to resolve service_name: {e}")
+
+            try:
+                recipient_message = recipient_message.format(**context)
+            except Exception:
+                pass
             # --- Specific user UUID ---
             if isinstance(r, str) and len(r) > 20 and "-" in r:
                 data.append(NotificationService._record(r, event_type, title,recipient_message, related_id))

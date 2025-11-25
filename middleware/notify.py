@@ -107,7 +107,8 @@ def notify(
                             title=title or "System Notification",
                             message=message,
                             related_id=related_id,
-                            messages_by_recipient=message_templates
+                            messages_by_recipient=message_templates,
+                            context=context
                         )
 
                     except Exception as e:
