@@ -1,6 +1,7 @@
 from functools import wraps
 from flask import g
 from services.notification_service import NotificationService
+from datetime import datetime
 
 
 def notify(
@@ -62,6 +63,21 @@ def notify(
                         **payload,  
                         **kwargs,   
                     }
+                    
+                    # Helper function to format date
+                    def format_date(date_str):
+                        if not date_str:
+                            return date_str
+                        try:
+                            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                            return dt.strftime("%m/%d/%y at %I:%M %p")
+                        except Exception:
+                            return date_str  # Fallback to raw if parsing fails
+                    
+                    # Format start_at if it exists in payload directly
+                    if "start_at" in payload and isinstance(payload["start_at"], str):
+                        context["start_at"] = format_date(payload["start_at"])
+                    
                     # Extract nested appointment values into context if available
                     if "appointment" in payload:
                         appt = payload["appointment"]
@@ -70,7 +86,8 @@ def notify(
                         if "service" in appt and "name" in appt["service"]:
                             context["service_name"] = appt["service"]["name"]
                         if "start_at" in appt:
-                            context["start_at"] = appt["start_at"]
+                            # Format date as "MM/DD/YY at H:MM AM/PM"
+                            context["start_at"] = format_date(appt["start_at"])
                         if "end_at" in appt:
                             context["end_at"] = appt["end_at"]
 
