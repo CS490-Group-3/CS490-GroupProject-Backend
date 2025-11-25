@@ -291,18 +291,13 @@ class AuthService:
             # Add updated timestamp
             update_data['updated_at'] = 'now()'
             
-            # Try user_details table first (based on get_user_profile), fallback to user_profiles
-            response = supabase.table('user_details')\
+            # Update user_profiles table directly
+            # Note: user_details is a VIEW (not a table), so it cannot be updated directly
+            # The view columns are aliased (profile_created_at, profile_updated_at) and it has JOINs
+            response = supabase.table('user_profiles')\
                 .update(update_data)\
-                .eq('id', user_id)\
+                .eq('user_id', user_id)\
                 .execute()
-            
-            if not response.data:
-                # Fallback to user_profiles table
-                response = supabase.table('user_profiles')\
-                    .update(update_data)\
-                    .eq('user_id', user_id)\
-                    .execute()
             
             if response.data:
                 return response.data[0], None

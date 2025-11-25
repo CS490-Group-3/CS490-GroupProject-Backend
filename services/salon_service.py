@@ -721,19 +721,29 @@ class SalonService:
         if salon["owner_id"] != user_id:
             return {"error": "You are not authorized to appeal this salon."}, 403
         
-
-        allowed_fields = ["name", "description", "address", "phone", "license_url", "logo_url", "timezone"]
+        # Allow all fields that can be set during registration
+        allowed_fields = ["name", "description", "address", "city", "state", "zip_code", "phone", "email", "license_url", "logo_url", "timezone"]
         valid_updates = {k: v for k, v in (updates or {}).items() if k in allowed_fields}
 
+        # Handle file uploads (same as register_salon)
         if license_file:
             valid_updates["license_url"] = StorageService.upload_file(license_file, salon_id, "license")
         if logo_file:
             valid_updates["logo_url"] = StorageService.upload_file(logo_file, salon_id, "logo")
+        
+        # Clean timezone if provided
         if "timezone" in valid_updates:
             valid_updates["timezone"] = SalonService._clean_tz(valid_updates["timezone"])
+        
+        # Validate that at least one contact method is provided
+        phone = valid_updates.get("phone") or salon.get("phone")
+        email = valid_updates.get("email") or salon.get("email")
+        if not (phone or email):
+            return {"error": "At least one contact method (phone or email) is required."}, 400
 
         if valid_updates:
             valid_updates["status"] = "pending"
+            valid_updates["updated_at"] = datetime.utcnow().isoformat()
             supabase.table("salons").update(valid_updates).eq("id", salon_id).execute()
         return {"message": "Appeal submitted successfully", "new_status": "pending"}
 

@@ -132,26 +132,31 @@ def appeal_salon(salon_id):
     try:
         user_id = g.user["sub"]
         if request.content_type and "multipart/form-data" in request.content_type:
-            body = request.form.to_dict()
-            updates = body.get("updates", {})
-            if isinstance(updates, str):
-                try:
-                    updates = json.loads(updates)
-                except json.JSONDecodeError:
-                    updates = {}
+            # Extract form fields directly (same structure as register_salon)
+            form = request.form.to_dict()
+            updates = {
+                k: v for k, v in form.items() 
+                if k in ["name", "description", "address", "city", "state", "zip_code", "phone", "email", "timezone"]
+            }
             logo_file = request.files.get("logo")
             license_file = request.files.get("license")
         else:
+            # JSON body - accept fields directly or nested in "updates"
             body = request.get_json() or {}
-            updates = body.get("updates", {})  
-            if isinstance(updates, str):
-                try:
-                    updates = json.loads(updates)
-                except json.JSONDecodeError:
-                    updates = {}
+            if "updates" in body:
+                updates = body["updates"]
+            else:
+                # Allow fields at top level for consistency
+                updates = {
+                    k: v for k, v in body.items() 
+                    if k in ["name", "description", "address", "city", "state", "zip_code", "phone", "email", "timezone"]
+                }
             logo_file = None
             license_file = None
         result = SalonService.appeal_salon(salon_id, user_id, updates, logo_file, license_file)
+        # appeal_salon returns either a dict or a tuple (dict, status_code)
+        if isinstance(result, tuple):
+            return jsonify(result[0]), result[1] if len(result) > 1 else 200
         return jsonify(result), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
