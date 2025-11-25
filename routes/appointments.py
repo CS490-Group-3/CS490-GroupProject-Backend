@@ -129,7 +129,7 @@ def list_appointments():
             "Your appointment has been sent out for confirmation "
         ),
         "barber": (
-            "A new appointment has been assigned to you scheduled for  {start_at}. Make sure to confirm or deny"
+            "A new appointment has been assigned to you scheduled for  {start_at}"
             
         ),
     },
