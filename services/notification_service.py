@@ -224,8 +224,16 @@ class NotificationService:
         if not offer.data:
             print(f"[notify_promotional_offer] Offer {offer_id} not found.")
             return
-
         salon_id = offer.data["salon_id"]
+
+        salon = (
+        supabase.table("salons")
+        .select("name")
+        .eq("id", salon_id)
+        .single()
+        .execute()
+        )
+        salon_name = salon.data["name"] 
         title = offer.data["title"]
         description = offer.data["description"]
         now = datetime.utcnow().isoformat()
@@ -252,7 +260,7 @@ class NotificationService:
                 .eq("salon_id", salon_id)
                 .execute()
             )
-            user_ids = {b["user_id"] for b in (bookings.data or [])} | {
+            user_ids = {b["customer_id"] for b in (bookings.data or [])} | {
                 l["user_id"] for l in (loyalty.data or [])
             }
 
@@ -278,7 +286,7 @@ class NotificationService:
                 "id": str(uuid.uuid4()),
                 "user_id": uid,
                 "notification_type": "promotional_offer",
-                "title": f"New Offer: {title}",
+                "title": f"New Promotional Offer at {salon_name}: {title}",
                 "message": description,
                 "status": "pending",
                 "related_id": offer_id,
