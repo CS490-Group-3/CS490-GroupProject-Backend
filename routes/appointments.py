@@ -267,9 +267,9 @@ def reschedule_appointment(appointment_id):
 @role_required(["salon_owner", "barber", "admin"])
 @notify(
     ["user"],
-    event_type="General",
+    event_type="general",
     title="Appointment status Updated",
-    message_template="Your appointment has been updated",
+    message_template="Your appointment at {salon_name} has been updated",
     related_key="appointment_id",
 )
 @swag_from("../docs/confirm_or_deny.yml")
