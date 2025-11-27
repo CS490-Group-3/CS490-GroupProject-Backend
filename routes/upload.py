@@ -1,12 +1,14 @@
 from flask import Blueprint, request, jsonify, g
 from werkzeug.utils import secure_filename
 from services.upload_file import StorageService
-from middleware.auth import login_required  
+from middleware.auth import login_required
+from middleware.error_logging import auto_log_errors
 from flasgger.utils import swag_from
 
 upload_bp = Blueprint("upload", __name__, url_prefix="/api/uploads")
 
 @upload_bp.route("/<file_type>", methods=["POST"])
+@auto_log_errors
 @login_required()
 @swag_from("../docs/upload_file.yml")
 def upload_file(file_type):
@@ -38,6 +40,7 @@ def upload_file(file_type):
 
 
 @upload_bp.route("/refresh", methods=["POST"])
+@auto_log_errors
 @login_required()
 @swag_from("../docs/upload_refresh.yml")
 def refresh_signed_url():

@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify, g, json
 from pydantic import ValidationError
 from middleware.auth import login_required, role_required, get_current_user
 from middleware.notify import notify
+from middleware.error_logging import auto_log_errors, log_route_error, log_service_error
+from middleware.error_logging import auto_log_errors
 from models.salon import SalonRegisterRequest
 from services.salon_service import SalonService
 from services.promotion_service import PromotionService
@@ -17,6 +19,7 @@ salon_bp.strict_slashes = False
 
 @salon_bp.route("", methods=["GET"], strict_slashes=False)
 @salon_bp.route("/", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @swag_from("../docs/salon_list.yml")
 def list_salons():
@@ -33,13 +36,16 @@ def list_salons():
             sort=request.args.get("sort", "top"),
         )
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         return jsonify({"salons": data}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @salon_bp.route("/<salon_id>", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @swag_from("../docs/salon_detail.yml")
 def get_salon_detail(salon_id):
@@ -48,11 +54,13 @@ def get_salon_detail(salon_id):
     """
     data, error = SalonService.get_salon_detail(salon_id)
     if error:
+        log_service_error(error)
         return jsonify({"error": error}), 404
     return jsonify(data), 200
 
 
 @salon_bp.route("/<salon_id>/reviews", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @swag_from("../docs/salon_reviews.yml")
 def get_salon_reviews(salon_id):
@@ -60,9 +68,11 @@ def get_salon_reviews(salon_id):
         limit = int(request.args.get("limit", 6))
         data, error = SalonService.list_reviews(salon_id, limit=limit)
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         return jsonify({"reviews": data}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -71,10 +81,11 @@ def get_salon_reviews(salon_id):
 # Salon registration (requires user auth)
 #@role_required(['salon_owner'])
 @salon_bp.route("/apply", methods=["POST"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @notify(["admins"],event_type="salon_verification",title="New Salon Application",
 message_template="New salon application by {salon_name} submitted.")
-@swag_from("../docs/salon_apply.yml") 
+@swag_from("../docs/salon_apply.yml")
 def register_salon():
     """
     Allows an authenticated salon_owner to submit a new salon application.
@@ -124,6 +135,7 @@ def register_salon():
 # Salon owner appeals
 #@role_required(['salon_owner'])
 @salon_bp.route("/<salon_id>/appeal", methods=["PUT"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @notify(["admins"],event_type="salon_verification",title="Salon Appeal submitted",
 message_template="New salon appeal by {salon_name} submitted.")
@@ -159,10 +171,12 @@ def appeal_salon(salon_id):
             return jsonify(result[0]), result[1] if len(result) > 1 else 200
         return jsonify(result), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @salon_bp.route("/<salon_id>/application", methods=["PATCH"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner'])
 @swag_from("../docs/salon_update_pending.yml")
@@ -194,11 +208,13 @@ def update_pending_application(salon_id):
         )
         return jsonify(result), status_code
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 
 @salon_bp.route('/<uuid:salon_id>/promotions', methods=['POST'])
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'admin'])
 @swag_from("../docs/salon_promotions.yml")
@@ -225,6 +241,7 @@ def create_promotional_offer(salon_id):
 
 # Admin approval (requires admin)
 @salon_bp.route("/<salon_id>/approve", methods=["PATCH"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['admin'])
 @notify(["salon_owner"],event_type="salon_verification",title="Salon Approved",
@@ -237,11 +254,13 @@ def approve_salon(salon_id):
         result = SalonService.approve_salon(salon_id, approver_id)
         return jsonify(result), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 # Admin rejection
 @salon_bp.route("/<salon_id>/reject", methods=["PATCH"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['admin'])
 @notify(["salon_owner"],event_type="salon_verification",title="Salon Denied",
@@ -255,6 +274,7 @@ def reject_salon(salon_id):
         result = SalonService.reject_salon(salon_id, approver_id, reason)
         return jsonify({"reason": reason, **result}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -262,6 +282,7 @@ def reject_salon(salon_id):
 
 #view pending applications
 @salon_bp.route("/pending", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @role_required(['admin'])
 @swag_from("../docs/salon_pending.yml")
 def get_pending_salons_route():
@@ -275,6 +296,7 @@ def get_pending_salons_route():
         data = SalonService().get_pending_salons()
         return jsonify(data), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -282,6 +304,7 @@ def get_pending_salons_route():
 
 #get a salons verification history
 @salon_bp.route("/<uuid:salon_id>/status-history", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['admin'])
 @swag_from("../docs/salon_status_history.yml")
@@ -290,9 +313,11 @@ def get_salon_status_history(salon_id):
         result = SalonService.get_status_history(salon_id) 
         return jsonify(result), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 @salon_bp.route("/mine", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'admin'])
 @swag_from("../docs/salon_mine.yml")
@@ -311,9 +336,11 @@ def get_my_salon():
             return jsonify({"error": error}), 500
         return jsonify({"salon": salon}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 @salon_bp.route("/<salon_id>/hours", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['admin', 'salon_owner'])
 @swag_from("../docs/salon_hours_get.yml")
@@ -335,13 +362,16 @@ def get_salon_hours(salon_id):
 
         hours, error = SalonService.get_salon_hours(salon_id)
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         return jsonify({"hours": hours}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @salon_bp.route("/<salon_id>/hours", methods=["PUT"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['admin', 'salon_owner'])
 @swag_from("../docs/salon_hours_update.yml")
@@ -369,13 +399,16 @@ def update_salon_hours(salon_id):
 
         result, error = SalonService.upsert_salon_hours(salon_id, hours)
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
 
         return jsonify({"message": "Salon hours saved", "hours": result}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 @salon_bp.route("/<salon_id>/hours/<int:day_of_week>", methods=["PATCH"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['admin', 'salon_owner'])
 @swag_from("../docs/salon_hours_patch.yml")
@@ -397,13 +430,16 @@ def update_salon_hour_day(salon_id, day_of_week):
         body = request.get_json() or {}
         result, error = SalonService.upsert_salon_hour_day(salon_id, day_of_week, body)
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         return jsonify({"message": "Salon day hours saved", "hours": result}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @salon_bp.route("/<salon_id>/hours/<int:day_of_week>", methods=["DELETE"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['admin', 'salon_owner'])
 @swag_from("../docs/salon_hours_delete.yml")
@@ -424,14 +460,17 @@ def delete_salon_hour_day(salon_id, day_of_week):
 
         _, error = SalonService.delete_salon_hour_day(salon_id, day_of_week)
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         return jsonify({"message": "Salon day hours deleted"}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------------------3. GET SALON DATA
 # Get all services for a salon
 @salon_bp.route("/<salon_id>/services", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @swag_from("../docs/salon_services.yml")
 def get_salon_services(salon_id):
@@ -466,9 +505,11 @@ def get_salon_services(salon_id):
         # If result is not a tuple, it's the services list directly
         return jsonify({"services": result}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
     
 @salon_bp.route("/<salon_id>/employees", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @swag_from("../docs/salon_employees.yml")
 def get_salon_employees(salon_id):
@@ -478,12 +519,15 @@ def get_salon_employees(salon_id):
     try:
         employees, error = SalonService.get_salon_employees(salon_id)
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 404
         return jsonify({"employees": employees}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
     
 @salon_bp.route("/<salon_id>/tags", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @swag_from("../docs/salon_tags.yml")
 def get_salon_tags(salon_id):
@@ -493,12 +537,15 @@ def get_salon_tags(salon_id):
     try:
         result, error = SalonService.get_salon_tags(salon_id)
         if error:
+            log_service_error(error)
             return jsonify({"error1": error}), 404
         return jsonify({"tags": result}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 @salon_bp.route("/<salon_id>/customers/<customer_id>/history", methods=["GET"])
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'barber', 'admin'], verify_with_supabase=True)
 @swag_from("../docs/salon_customer_history.yml")
@@ -547,11 +594,13 @@ def get_salon_customer_history(salon_id: str, customer_id: str):
             "history": history
         }), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 #---------------------------------------4. SALON EMPLOYEES (service providers/barbers)
 
 # Search 'barbers' to be added to salon
 @salon_bp.route("/provider/search", methods=["GET"])
+@auto_log_errors
 @login_required()
 @role_required(['admin', 'salon_owner'])
 @swag_from("../docs/salon_provider_search.yml")
@@ -567,13 +616,16 @@ def search_for_employee():
         print("Searching for providers with email containing:", query)
         result, error = SalonService.salon_owner_employee_search(query)
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 404
         return jsonify({"providers": result}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error3": str(e)}), 500
 
 # Add service provider to salon
 @salon_bp.route("/provider", methods=["POST"])
+@auto_log_errors
 @login_required()
 @role_required(['admin', 'salon_owner'])
 @swag_from("../docs/salon_add_provider.yml")
@@ -598,16 +650,19 @@ def add_service_provider():
         result, error = SalonService.add_service_provider(salon_id, user_id, bio, years_experience, is_active)
         
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         
         return jsonify(result), 201
         
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 #---------------------------------------5. BARBER SERVICES (assign services to barbers)
 
 @salon_bp.route("/<salon_id>/barbers/<barber_id>/services", methods=["POST"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'admin'])
 @swag_from("../docs/salon_barber_service_add.yml")
@@ -641,15 +696,18 @@ def add_service_to_barber(salon_id, barber_id):
         result, error = SalonService.add_service_to_barber(salon_id, barber_id, service_id, user_id)
         
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         
         return jsonify(result), 201
         
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @salon_bp.route("/<salon_id>/barbers/<barber_id>/services/<service_id>", methods=["DELETE"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'admin'])
 @swag_from("../docs/salon_barber_service_remove.yml")
@@ -675,15 +733,18 @@ def remove_service_from_barber(salon_id, barber_id, service_id):
         result, error = SalonService.remove_service_from_barber(salon_id, barber_id, service_id, user_id)
         
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         
         return jsonify(result), 200
         
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @salon_bp.route("/<salon_id>/barbers/<barber_id>/services", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'barber', 'admin'])
 @swag_from("../docs/salon_barber_services_list.yml")
@@ -728,16 +789,19 @@ def get_barber_services(salon_id, barber_id):
         services, error = SalonService.get_barber_services(salon_id, barber_id, owner_id)
         
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         
         return jsonify({"services": services}), 200
         
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 #---------------------------------------6. SALON MANAGEMENT (verified salons)
 
 @salon_bp.route("/<salon_id>", methods=["PATCH"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'admin'])
 @swag_from("../docs/salon_update.yml")
@@ -776,14 +840,17 @@ def update_verified_salon(salon_id):
         )
         
         if error:
+            log_service_error(error, severity='medium' if "Forbidden" in error else 'high')
             status_code = 403 if "Forbidden" in error else 404
             return jsonify({"error": error}), status_code
         
         return jsonify(result), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 @salon_bp.route("/<salon_id>/employees/<barber_id>", methods=["DELETE"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'admin'])
 @swag_from("../docs/salon_employee_remove.yml")
@@ -808,14 +875,17 @@ def remove_employee(salon_id, barber_id):
         result, error = SalonService.remove_employee(salon_id, barber_id, user_id)
         
         if error:
+            log_service_error(error, severity='medium' if "Forbidden" in error else 'high')
             status_code = 403 if "Forbidden" in error else 404
             return jsonify({"error": error}), status_code
         
         return jsonify(result), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 @salon_bp.route("/<salon_id>/customers", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'admin'])
 @swag_from("../docs/salon_customers.yml")
@@ -840,14 +910,17 @@ def get_salon_customers(salon_id):
         customers, error = SalonService.get_salon_customers(salon_id, user_id)
         
         if error:
+            log_service_error(error, severity='medium' if "Forbidden" in error else 'high')
             status_code = 403 if "Forbidden" in error else 404
             return jsonify({"error": error}), status_code
         
         return jsonify({"customers": customers}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 @salon_bp.route("/<salon_id>/employees/<barber_id>", methods=["PATCH"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'admin'])
 @swag_from("../docs/salon_employee_update.yml")
@@ -873,14 +946,17 @@ def update_employee(salon_id, barber_id):
         result, error = SalonService.update_employee(salon_id, barber_id, user_id, json_data)
         
         if error:
+            log_service_error(error, severity='medium' if "Forbidden" in error else 'high')
             status_code = 403 if "Forbidden" in error else 404
             return jsonify({"error": error}), status_code
         
         return jsonify(result), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 @salon_bp.route("/<salon_id>/employees/<barber_id>/availability", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'admin'])
 @swag_from("../docs/salon_employee_availability_get.yml")
@@ -913,13 +989,16 @@ def get_employee_availability(salon_id, barber_id):
         result, error = ScheduleService.get_availability(barber_id=barber_id)
         
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         
         return jsonify({"availability": result}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 @salon_bp.route("/<salon_id>/employees/<barber_id>/availability", methods=["POST", "PATCH"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'admin'])
 @swag_from("../docs/salon_employee_availability_set.yml")
@@ -1000,4 +1079,5 @@ def set_employee_availability(salon_id, barber_id):
                     return jsonify({"error": error}), 400
             return jsonify({"message": "Availability updated successfully"}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500

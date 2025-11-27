@@ -6,6 +6,7 @@ import uuid
 from pydantic import ValidationError
 from services.notification_service import NotificationService
 from middleware.auth import login_required
+from middleware.error_logging import auto_log_errors
 from flasgger.utils import swag_from
 
 
@@ -25,6 +26,7 @@ def track_open(notification_id):
 """
 
 @notifications_bp.get("/")
+@auto_log_errors
 @login_required()
 @swag_from("../docs/notifications_list.yml")
 def get_notifications():
@@ -34,6 +36,7 @@ def get_notifications():
 
 
 @notifications_bp.get("/unread-count")
+@auto_log_errors
 @login_required()
 @swag_from("../docs/notifications_unread_count.yml")
 def unread_count():
@@ -43,6 +46,7 @@ def unread_count():
 
 
 @notifications_bp.patch("/<notif_id>/mark-read")
+@auto_log_errors
 @login_required()
 @swag_from("../docs/notifications_mark_read.yml")
 def mark_notif_read(notif_id):
@@ -52,6 +56,7 @@ def mark_notif_read(notif_id):
 
 
 @notifications_bp.patch("/mark-all-read")
+@auto_log_errors
 @login_required()
 @swag_from("../docs/notifications_mark_all_read.yml")
 def mark_all_read():

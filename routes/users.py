@@ -6,11 +6,13 @@ from flasgger.utils import swag_from
 from services.visit_history_service import VisitHistoryService
 from services.customer_image_service import CustomerImageService
 from middleware import login_required, get_current_user
+from middleware.error_logging import auto_log_errors
 
 users_bp = Blueprint('users', __name__, url_prefix='/api/users')
 
 
 @users_bp.route('/me/visits', methods=['GET'])
+@auto_log_errors
 @login_required()
 @swag_from("../docs/users_me_visits.yml")
 def get_my_visits():
@@ -49,6 +51,7 @@ def get_my_visits():
 
 
 @users_bp.route('/me/images', methods=['POST'])
+@auto_log_errors
 @login_required()
 @swag_from("../docs/users_upload_image.yml")
 def upload_customer_image():
@@ -84,6 +87,7 @@ def upload_customer_image():
 
 
 @users_bp.route('/me/images', methods=['GET'])
+@auto_log_errors
 @login_required()
 @swag_from("../docs/users_list_images.yml")
 def list_customer_images():
@@ -115,6 +119,7 @@ def list_customer_images():
 
 
 @users_bp.route('/me/images/<image_id>', methods=['DELETE'])
+@auto_log_errors
 @login_required()
 @swag_from("../docs/users_delete_image.yml")
 def delete_customer_image(image_id):

@@ -9,11 +9,13 @@ from models.schedule import (
 from services.auth_service import AuthService
 from services.schedule_service import ScheduleService
 from middleware import login_required, role_required, get_current_user
+from middleware.error_logging import auto_log_errors, log_route_error, log_service_error
 from flasgger.utils import swag_from
 from datetime import time
 schedule_bp = Blueprint('schedule', __name__, url_prefix='/api/schedule')
 
 @schedule_bp.route('/availability', methods=['GET'])
+@auto_log_errors
 @login_required()
 @swag_from("../docs/schedule_get_availability.yml")
 def get_availability():
@@ -48,6 +50,7 @@ def get_availability():
 
 
 @schedule_bp.route('/availability', methods=['POST'])
+@auto_log_errors
 @login_required()
 @role_required(['barber', 'admin', 'salon_owner'])
 @swag_from("../docs/schedule_create_availability.yml")
@@ -92,9 +95,11 @@ def create_availability():
     except ValidationError as e:
         return jsonify({"error": "Validation failed", "details": e.errors()}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
     
 @schedule_bp.route('/availability', methods=['PATCH'])
+@auto_log_errors
 @login_required()
 @role_required(['barber', 'admin', 'salon_owner'])
 @swag_from("../docs/schedule_update_availability.yml")
@@ -151,6 +156,7 @@ def update_availability():
 # --------- Unavailability / Blocking ----------
 
 @schedule_bp.route('/unavailability', methods=['GET'])
+@auto_log_errors
 @login_required()
 @role_required(['barber', 'admin', 'salon_owner'])
 @swag_from("../docs/schedule_get_unavailability.yml")
@@ -173,6 +179,7 @@ def list_unavailability():
 
         blocks, svc_error = ScheduleService.list_unavailability(barber_id, start_from, end_before)
         if svc_error:
+            log_service_error(svc_error)
             return jsonify({"error": svc_error}), 400
 
         return jsonify({
@@ -181,10 +188,12 @@ def list_unavailability():
             "blocks": blocks or []
         }), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @schedule_bp.route('/unavailability', methods=['POST'])
+@auto_log_errors
 @login_required()
 @role_required(['barber', 'admin', 'salon_owner'])
 @swag_from("../docs/schedule_create_unavailability.yml")
@@ -214,16 +223,19 @@ def create_unavailability():
             reason=req.reason
         )
         if svc_error:
+            log_service_error(svc_error)
             return jsonify({"error": svc_error}), 400
 
         return jsonify({"block": result}), 201
     except ValidationError as e:
         return jsonify({"error": "Validation failed", "details": e.errors()}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @schedule_bp.route('/unavailability/<block_id>', methods=['PATCH'])
+@auto_log_errors
 @login_required()
 @role_required(['barber', 'admin', 'salon_owner'])
 @swag_from("../docs/schedule_update_unavailability.yml")
@@ -253,16 +265,19 @@ def update_unavailability(block_id):
         if svc_error == "Forbidden":
             return jsonify({"error": svc_error}), 403
         if svc_error:
+            log_service_error(svc_error)
             return jsonify({"error": svc_error}), 400
 
         return jsonify({"message": "Blocked time updated successfully.", "block": result}), 200
     except ValidationError as e:
         return jsonify({"error": "Validation failed", "details": e.errors()}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @schedule_bp.route('/unavailability/<block_id>', methods=['DELETE'])
+@auto_log_errors
 @login_required()
 @role_required(['barber', 'admin', 'salon_owner'])
 @swag_from("../docs/schedule_delete_unavailability.yml")
@@ -281,10 +296,12 @@ def delete_unavailability(block_id):
         if svc_error == "Forbidden":
             return jsonify({"error": svc_error}), 403
         if svc_error:
+            log_service_error(svc_error)
             return jsonify({"error": svc_error}), 400
         if not success:
             return jsonify({"error": "Failed to delete block"}), 400
 
         return jsonify({"message": "Blocked time deleted successfully."}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
