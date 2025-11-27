@@ -151,10 +151,43 @@ def refresh_token():
 def get_current_user_route():
     """
     Get current authenticated user's data.
+    Returns full user profile from database.
     """
     try:
-        user = get_current_user()
-        return jsonify({"user": user}), 200
+        current_user = get_current_user()
+        if not current_user:
+            return jsonify({"error": "User not found"}), 404
+        
+        # Fetch full profile from database
+        user_id = current_user.get('sub') or current_user.get('id')
+        if not user_id:
+            return jsonify({"error": "Invalid user data"}), 400
+        
+        profile = AuthService.get_user_profile(user_id)
+        
+        if not profile:
+            # Fallback to JWT data if profile not found
+            return jsonify({"user": current_user}), 200
+        
+        # Merge JWT data with database profile
+        # Use 'sub' from JWT for consistency, but prefer database fields
+        user_data = {
+            "sub": profile.get('id') or user_id,
+            "email": profile.get('email') or current_user.get('email'),
+            "role": profile.get('role') or current_user.get('role', 'customer'),
+            "first_name": profile.get('first_name'),
+            "last_name": profile.get('last_name'),
+            "phone": profile.get('phone'),
+            "profile_image_url": profile.get('profile_image_url'),
+            "date_of_birth": profile.get('date_of_birth'),
+            "city": profile.get('city'),
+            "state": profile.get('state'),
+            "age_bracket": profile.get('age_bracket'),
+            "gender": profile.get('gender'),
+            "preferred_services": profile.get('preferred_services')
+        }
+        
+        return jsonify({"user": user_data}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

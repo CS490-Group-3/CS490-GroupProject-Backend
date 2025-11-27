@@ -79,7 +79,8 @@ class AuthService:
     @staticmethod
     def get_user_profile(user_id: str) -> Optional[Dict]:
         """
-        Get user profile from user_profiles table.
+        Get user profile from user_details view (includes all profile fields).
+        Uses user_details view which combines auth and profile data.
         
         Args:
             user_id: User's UUID
@@ -88,14 +89,38 @@ class AuthService:
             User profile dict or None
         """
         try:
-            print("Getting profile for user_id:", user_id)
-            response = supabase.table('user_details').select('first_name, last_name, email, id, role').eq("id", user_id).execute()
-            
-            print("Profile response:", response)
+            # Select all profile fields from user_details view
+            # Note: user_details is a VIEW that combines auth.users and user_profiles
+            # It uses aliased column names (profile_created_at, profile_updated_at)
+            # We only select fields needed for the API response
+            response = supabase.table('user_details')\
+                .select('id, email, first_name, last_name, phone, profile_image_url, date_of_birth, city, state, age_bracket, gender, preferred_services, role')\
+                .eq("id", user_id)\
+                .execute()
 
             # response.data is a list of dicts
             if response.data and len(response.data) > 0:
-                return response.data[0]  # first row as a dict
+                profile = response.data[0]
+                # preferred_services is a jsonb column, so Supabase should auto-deserialize it
+                # Handle edge cases: None, malformed data, or ensure it's a list if present
+                preferred_services = profile.get('preferred_services')
+                if preferred_services is None:
+                    # Keep as None (will be serialized as null in JSON)
+                    pass
+                elif isinstance(preferred_services, list):
+                    # Already a list (correct format from jsonb)
+                    pass
+                elif isinstance(preferred_services, str):
+                    # Malformed data stored as string - try to parse or default to empty list
+                    try:
+                        parsed = json.loads(preferred_services)
+                        profile['preferred_services'] = parsed if isinstance(parsed, list) else []
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        profile['preferred_services'] = []
+                else:
+                    # Unexpected type - default to empty list
+                    profile['preferred_services'] = []
+                return profile
             return None
         except Exception as e:
             print("Error fetching user profile:", e)
