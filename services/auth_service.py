@@ -101,12 +101,25 @@ class AuthService:
             # response.data is a list of dicts
             if response.data and len(response.data) > 0:
                 profile = response.data[0]
-                # Parse preferred_services if it's a JSON string
-                if profile.get('preferred_services') and isinstance(profile.get('preferred_services'), str):
+                # preferred_services is a jsonb column, so Supabase should auto-deserialize it
+                # Handle edge cases: None, malformed data, or ensure it's a list if present
+                preferred_services = profile.get('preferred_services')
+                if preferred_services is None:
+                    # Keep as None (will be serialized as null in JSON)
+                    pass
+                elif isinstance(preferred_services, list):
+                    # Already a list (correct format from jsonb)
+                    pass
+                elif isinstance(preferred_services, str):
+                    # Malformed data stored as string - try to parse or default to empty list
                     try:
-                        profile['preferred_services'] = json.loads(profile['preferred_services'])
-                    except (json.JSONDecodeError, TypeError):
+                        parsed = json.loads(preferred_services)
+                        profile['preferred_services'] = parsed if isinstance(parsed, list) else []
+                    except (json.JSONDecodeError, TypeError, ValueError):
                         profile['preferred_services'] = []
+                else:
+                    # Unexpected type - default to empty list
+                    profile['preferred_services'] = []
                 return profile
             return None
         except Exception as e:
