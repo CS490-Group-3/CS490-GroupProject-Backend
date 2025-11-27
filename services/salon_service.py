@@ -1,6 +1,8 @@
 from config import supabase
 from datetime import datetime, time as dt_time
 from services.upload_file import StorageService
+from services.audit_logging_service import AuditLoggingService
+from services.error_logging_service import ErrorLoggingService
 from zoneinfo import ZoneInfo
 import uuid
 import traceback
@@ -106,6 +108,15 @@ class SalonService:
 
         if updates:
             supabase.table("salons").update(updates).eq("id", salon_id).execute()
+
+        # Log audit
+        AuditLoggingService.log_audit(
+            table_name='salons',
+            record_id=salon_id,
+            action='INSERT',
+            new_values={'name': data.name, 'status': 'pending', 'owner_id': owner_id},
+            changed_by=owner_id
+        )
 
         return {
             "message": "Salon registered successfully. Verification required.",
@@ -214,6 +225,7 @@ class SalonService:
 
             return results, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -233,6 +245,7 @@ class SalonService:
             data = resp.data or []
             return (data[0] if data else None), None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -304,6 +317,7 @@ class SalonService:
                 "gallery": [],
             }, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -362,6 +376,7 @@ class SalonService:
                 output.append(review_data)
             return output, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -370,15 +385,29 @@ class SalonService:
         Add a service provider (barber) to a salon.
         """
         try:
-            supabase.table("barbers").insert({
+            barber_data = {
                 "salon_id": salon_id,
                 "user_id": provider_id,
                 "bio": bio,
                 "years_experience": years_experience,
                 "is_active": is_active,
-            }).execute()
+            }
+            response = supabase.table("barbers").insert(barber_data).execute()
+            created_id = response.data[0]["id"] if response.data else None
+            
+            # Log audit
+            if created_id:
+                AuditLoggingService.log_audit(
+                    table_name='barbers',
+                    record_id=created_id,
+                    action='INSERT',
+                    new_values=barber_data,
+                    changed_by=None  # Could get from context if needed
+                )
+            
             return {"message": "Service provider added to salon successfully"}, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
         
     @staticmethod
@@ -387,16 +416,30 @@ class SalonService:
         Create a new service for a salon.
         """
         try:
-            supabase.table("services").insert({
+            service_data = {
                 "salon_id": salon_id,
                 "name": name,
                 "description": description,
                 "duration_minutes": duration_minutes,
                 "price": price,
                 "is_active": is_active,
-            }).execute()
+            }
+            response = supabase.table("services").insert(service_data).execute()
+            created_id = response.data[0]["id"] if response.data else None
+            
+            # Log audit
+            if created_id:
+                AuditLoggingService.log_audit(
+                    table_name='services',
+                    record_id=created_id,
+                    action='INSERT',
+                    new_values=service_data,
+                    changed_by=None  # Could get from context if needed
+                )
+            
             return {"message": "Service created successfully"}, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     @staticmethod
     def get_service(service_id):
@@ -409,6 +452,7 @@ class SalonService:
                 return "Service not found",
             return response.data, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     @staticmethod
     def get_salon_services(salon_id, data=None):
@@ -452,6 +496,7 @@ class SalonService:
                 
             return response.data or [], None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -508,6 +553,7 @@ class SalonService:
                 })
             return employees, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     @staticmethod
     def salon_owner_employee_search(query_str):
@@ -532,6 +578,7 @@ class SalonService:
             return available_users, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     @staticmethod
     def get_salon_tags(salon_id):
@@ -542,6 +589,7 @@ class SalonService:
             tags_response = supabase.table("salon_tags").select("*, tags(name)").eq("salon_id", salon_id).execute()
             return tags_response.data, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     #Admin notification format may need to be changed
 
@@ -560,6 +608,7 @@ class SalonService:
             )
             return resp.data or [], None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -633,6 +682,7 @@ class SalonService:
                 return None, f"salon_hours insert failed: {insert_resp.error}"
             return normalized, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             traceback.print_exc()
             return None, f"salon_hours upsert exception: {e}"
 
@@ -688,6 +738,7 @@ class SalonService:
 
             return row, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -702,6 +753,7 @@ class SalonService:
             supabase.table("salon_hours").delete().eq("salon_id", salon_id).eq("day_of_week", day_of_week).execute()
             return True, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -741,10 +793,29 @@ class SalonService:
         if not (phone or email):
             return {"error": "At least one contact method (phone or email) is required."}, 400
 
+        # Get old values for audit log
+        old_salon = supabase.table("salons").select("*").eq("id", salon_id).maybe_single().execute()
+        old_values = {}
+        if old_salon.data:
+            for key in valid_updates.keys():
+                if key in old_salon.data:
+                    old_values[key] = old_salon.data[key]
+            old_values['status'] = old_salon.data.get('status')
+        
         if valid_updates:
             valid_updates["status"] = "pending"
             valid_updates["updated_at"] = datetime.utcnow().isoformat()
             supabase.table("salons").update(valid_updates).eq("id", salon_id).execute()
+            
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='salons',
+                record_id=salon_id,
+                action='UPDATE',
+                old_values=old_values,
+                new_values={**valid_updates, 'status': 'pending'},
+                changed_by=user_id
+            )
         return {"message": "Appeal submitted successfully", "new_status": "pending"}
 
     @staticmethod
@@ -799,6 +870,10 @@ class SalonService:
 
     @staticmethod
     def approve_salon(salon_id, approver_id):
+        # Get old values before update
+        old_salon = supabase.table("salons").select("status").eq("id", salon_id).maybe_single().execute()
+        old_status = old_salon.data.get("status") if old_salon.data else None
+        
         supabase.table("salons").update({
             "status": "verified",
             "updated_at": datetime.utcnow().isoformat()
@@ -806,11 +881,26 @@ class SalonService:
 
         salon = supabase.table("salons").select("name, owner_id").eq("id", salon_id).single().execute()
         owner_id = salon.data["owner_id"]
+        
+        # Log audit
+        AuditLoggingService.log_audit(
+            table_name='salons',
+            record_id=salon_id,
+            action='UPDATE',
+            old_values={'status': old_status},
+            new_values={'status': 'verified'},
+            changed_by=approver_id
+        )
+        
         return {"message": "Salon approved successfully"}
 
 
     @staticmethod
     def reject_salon(salon_id, approver_id, reason):
+        # Get old values before update
+        old_salon = supabase.table("salons").select("status").eq("id", salon_id).maybe_single().execute()
+        old_status = old_salon.data.get("status") if old_salon.data else None
+        
         supabase.table("salons").update({
             "status": "rejected",
             "updated_at": datetime.utcnow().isoformat()
@@ -818,6 +908,16 @@ class SalonService:
 
         salon = supabase.table("salons").select("name, owner_id").eq("id", salon_id).single().execute()
         owner_id = salon.data["owner_id"]
+        
+        # Log audit
+        AuditLoggingService.log_audit(
+            table_name='salons',
+            record_id=salon_id,
+            action='UPDATE',
+            old_values={'status': old_status},
+            new_values={'status': 'rejected', 'rejection_reason': reason},
+            changed_by=approver_id
+        )
 
         return {"message": "Salon rejected", "reason": reason}
 
@@ -893,17 +993,31 @@ class SalonService:
                 return None, "Service is already assigned to this barber"
             
             # Insert the relationship
-            response = supabase.table("barber_services").insert({
+            relationship_data = {
                 "barber_id": barber_id,
                 "service_id": service_id
-            }).execute()
+            }
+            response = supabase.table("barber_services").insert(relationship_data).execute()
             
             if getattr(response, "error", None):
                 return None, response.error.message
             
+            created_id = response.data[0]["id"] if response.data else None
+            
+            # Log audit
+            if created_id:
+                AuditLoggingService.log_audit(
+                    table_name='barber_services',
+                    record_id=created_id,
+                    action='INSERT',
+                    new_values=relationship_data,
+                    changed_by=owner_id
+                )
+            
             return {"message": "Service added to barber successfully"}, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -948,6 +1062,10 @@ class SalonService:
             if str(service_resp.data.get("salon_id")) != str(salon_id):
                 return None, "Service does not belong to this salon"
             
+            # Get old relationship for audit log
+            old_rel = supabase.table("barber_services").select("*").eq("barber_id", barber_id).eq("service_id", service_id).maybe_single().execute()
+            old_values = old_rel.data if old_rel.data else {}
+            
             # Delete the relationship
             response = supabase.table("barber_services").delete().eq("barber_id", barber_id).eq("service_id", service_id).execute()
             
@@ -957,9 +1075,20 @@ class SalonService:
             if not response.data:
                 return None, "Service is not assigned to this barber"
             
+            # Log audit
+            if old_values:
+                AuditLoggingService.log_audit(
+                    table_name='barber_services',
+                    record_id=old_values.get('id'),
+                    action='DELETE',
+                    old_values=old_values,
+                    changed_by=owner_id
+                )
+            
             return {"message": "Service removed from barber successfully"}, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -1017,6 +1146,7 @@ class SalonService:
             return services, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -1051,6 +1181,7 @@ class SalonService:
             return {"message": "Salon updated successfully"}, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -1075,15 +1206,34 @@ class SalonService:
             if str(service_resp.data.get("salon_id")) != str(salon_id):
                 return None, "Service does not belong to this salon"
             
+            # Get old values for audit log
+            old_service = supabase.table("services").select("*").eq("id", service_id).maybe_single().execute()
+            old_values = {}
+            if old_service.data:
+                for key in (updates or {}).keys():
+                    if key in old_service.data:
+                        old_values[key] = old_service.data[key]
+            
             allowed_fields = ["name", "description", "duration_minutes", "price", "is_active"]
             valid_updates = {k: v for k, v in (updates or {}).items() if k in allowed_fields and v is not None}
             
             if valid_updates:
                 supabase.table("services").update(valid_updates).eq("id", service_id).execute()
+                
+                # Log audit
+                AuditLoggingService.log_audit(
+                    table_name='services',
+                    record_id=service_id,
+                    action='UPDATE',
+                    old_values=old_values,
+                    new_values=valid_updates,
+                    changed_by=owner_id
+                )
             
             return {"message": "Service updated successfully"}, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -1108,12 +1258,32 @@ class SalonService:
             if str(service_resp.data.get("salon_id")) != str(salon_id):
                 return None, "Service does not belong to this salon"
             
+            # Get old values for audit log before deletion
+            old_values = {
+                'salon_id': service_resp.data.get('salon_id'),
+                'name': service_resp.data.get('name'),
+                'description': service_resp.data.get('description'),
+                'duration_minutes': service_resp.data.get('duration_minutes'),
+                'price': service_resp.data.get('price'),
+                'is_active': service_resp.data.get('is_active')
+            }
+            
             # Delete service
             supabase.table("services").delete().eq("id", service_id).execute()
+            
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='services',
+                record_id=service_id,
+                action='DELETE',
+                old_values=old_values,
+                changed_by=owner_id
+            )
             
             return {"message": "Service deleted successfully"}, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -1138,12 +1308,31 @@ class SalonService:
             if str(barber_resp.data.get("salon_id")) != str(salon_id):
                 return None, "Barber does not belong to this salon"
             
+            # Get old values for audit log before deletion
+            old_values = {
+                'salon_id': barber_resp.data.get('salon_id'),
+                'user_id': barber_resp.data.get('user_id'),
+                'bio': barber_resp.data.get('bio'),
+                'years_experience': barber_resp.data.get('years_experience'),
+                'is_active': barber_resp.data.get('is_active')
+            }
+            
             # Delete barber (this will cascade delete barber_services)
             supabase.table("barbers").delete().eq("id", barber_id).execute()
+            
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='barbers',
+                record_id=barber_id,
+                action='DELETE',
+                old_values=old_values,
+                changed_by=owner_id
+            )
             
             return {"message": "Employee removed successfully"}, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -1168,6 +1357,12 @@ class SalonService:
             if str(barber_resp.data.get("salon_id")) != str(salon_id):
                 return None, "Barber does not belong to this salon"
             
+            # Get old values for audit log
+            old_values = {}
+            for key in ["bio", "years_experience", "is_active"]:
+                if key in barber_resp.data:
+                    old_values[key] = barber_resp.data[key]
+            
             # Build update dict (only include provided fields)
             update_data = {}
             if "bio" in updates:
@@ -1186,9 +1381,20 @@ class SalonService:
             if getattr(updated, "error", None) or not updated.data:
                 return None, "Failed to update barber"
             
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='barbers',
+                record_id=barber_id,
+                action='UPDATE',
+                old_values=old_values,
+                new_values=update_data,
+                changed_by=owner_id
+            )
+            
             return updated.data[0], None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -1286,4 +1492,5 @@ class SalonService:
             return customers, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)

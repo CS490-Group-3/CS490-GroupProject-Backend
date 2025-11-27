@@ -3,6 +3,8 @@ from typing import Dict, Optional, List, Tuple
 from datetime import datetime, timezone, timedelta, time
 from zoneinfo import ZoneInfo
 from services.auth_service import AuthService
+from services.error_logging_service import ErrorLoggingService
+from services.audit_logging_service import AuditLoggingService
 
 class AppointmentService:
     # ------ helpers ------
@@ -370,9 +372,20 @@ class AppointmentService:
             if getattr(response, "error", None):
                 return None, response.error.message
             created_id = response.data[0]["id"]
+            
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='appointments',
+                record_id=created_id,
+                action='INSERT',
+                new_values=payload,
+                changed_by=uid
+            )
+            
             return AppointmentService.get_by_id(created_id, user=user)
 
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -421,14 +434,29 @@ class AppointmentService:
                 if AppointmentService.has_overlap(new_salon, new_barber, new_start, new_end, exclude_id=appointment_id):
                     return None, "Rescheduled time overlaps with another appointment."
 
+            # Get old values for audit log
+            old_values = {k: current.get(k) for k in update_data.keys()}
+            
             response = supabase.table("appointments").update(update_data).eq("id", appointment_id).execute()
             if getattr(response, "error", None):
                 return None, response.error.message
             if not response.data:
                 return None, "Nothing updated"
+            
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='appointments',
+                record_id=appointment_id,
+                action='UPDATE',
+                old_values=old_values,
+                new_values=update_data,
+                changed_by=user.get('sub')
+            )
+            
             return AppointmentService.get_by_id(appointment_id, user=user)
         
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -445,6 +473,9 @@ class AppointmentService:
             if not AppointmentService._can_manage(user, current):
                 return None, "Forbidden"
             
+            # Get old status for audit log
+            old_status = current.get("status")
+            
             update = {
                 "status": "cancelled",
                 "cancellation_reason": reason,
@@ -453,8 +484,20 @@ class AppointmentService:
             response = supabase.table("appointments").update(update).eq("id", appointment_id).execute()
             if getattr(response, "error", None) or not response.data:
                 return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Update failed"
+            
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='appointments',
+                record_id=appointment_id,
+                action='UPDATE',
+                old_values={'status': old_status},
+                new_values={'status': 'cancelled', 'cancellation_reason': reason},
+                changed_by=user.get('sub')
+            )
+            
             return AppointmentService.get_by_id(appointment_id, user=user)
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -502,6 +545,15 @@ class AppointmentService:
             if not ok:
                 return None, msg
 
+            # Get old values for audit log
+            old_values = {
+                'salon_id': current.get('salon_id'),
+                'barber_id': current.get('barber_id'),
+                'start_at': current.get('start_at'),
+                'end_at': current.get('end_at'),
+                'status': current.get('status')
+            }
+            
             # apply update
             update = {
                 "salon_id": salon_id,
@@ -514,8 +566,20 @@ class AppointmentService:
             response = supabase.table("appointments").update(update).eq("id", appointment_id).execute()
             if getattr(response, "error", None) or not response.data:
                 return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Nothing updated"
+            
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='appointments',
+                record_id=appointment_id,
+                action='UPDATE',
+                old_values=old_values,
+                new_values=update,
+                changed_by=user.get('sub')
+            )
+            
             return AppointmentService.get_by_id(appointment_id, user=user)
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     # ------ workflow ------
@@ -573,6 +637,7 @@ class AppointmentService:
                 return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Appointment not found"
             return AppointmentService.get_by_id(appointment_id, user=user)
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -759,6 +824,7 @@ class AppointmentService:
                     current += step
             return slots, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     # ------ reads ------
@@ -780,6 +846,7 @@ class AppointmentService:
             enriched = AppointmentService._hydrate_appointments([response.data])
             return (enriched[0] if enriched else response.data), None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
         
     @staticmethod
@@ -804,6 +871,7 @@ class AppointmentService:
             data = AppointmentService._hydrate_appointments(response.data or [])
             return data, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
         
     @staticmethod
@@ -829,6 +897,7 @@ class AppointmentService:
             data = AppointmentService._hydrate_appointments(response.data or [])
             return data, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
         
     @staticmethod
@@ -857,6 +926,7 @@ class AppointmentService:
             data = AppointmentService._hydrate_appointments(response.data or [])
             return data, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     

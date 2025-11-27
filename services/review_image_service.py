@@ -1,6 +1,7 @@
 from config import supabase
 from services.upload_file import StorageService
 from werkzeug.exceptions import BadRequest, Forbidden, NotFound
+from services.audit_logging_service import AuditLoggingService
 
 
 class ReviewImageService:
@@ -45,6 +46,15 @@ class ReviewImageService:
                 .execute()
                 .data[0]
             )
+            
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='review_images',
+                record_id=row['id'],
+                action='INSERT',
+                new_values=record,
+                changed_by=user_id
+            )
 
             row["signed_url"] = result["signed_url"]
             inserted_rows.append(row)
@@ -86,9 +96,26 @@ class ReviewImageService:
         if img["uploaded_by"] != user_id:
             raise Forbidden("You may only delete your own review images")
 
+        # Get old values for audit log
+        old_values = {
+            'review_id': img.get('review_id'),
+            'file_url': img.get('file_url'),
+            'uploaded_by': img.get('uploaded_by'),
+            'label': img.get('label')
+        }
+
         supabase.storage.from_("review-images").remove(img["file_url"])
 
         supabase.table("review_images").delete().eq("id", image_id).execute()
+        
+        # Log audit
+        AuditLoggingService.log_audit(
+            table_name='review_images',
+            record_id=image_id,
+            action='DELETE',
+            old_values=old_values,
+            changed_by=user_id
+        )
 
         return {"message": "Image deleted successfully"}
 
