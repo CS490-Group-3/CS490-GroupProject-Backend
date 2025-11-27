@@ -8,6 +8,7 @@ import jwt
 import os
 from typing import List, Optional
 from services.auth_service import AuthService
+from services.error_logging_service import ErrorLoggingService
 
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 
@@ -132,6 +133,13 @@ def login_required(verify_with_supabase: bool = False):
                     "message": f"Invalid token: {str(e)}"
                 }), 401
             except Exception as e:
+                # Log unexpected authentication errors
+                ErrorLoggingService.log_exception(
+                    exception=e,
+                    user_id=None,
+                    endpoint=request.path if request else None,
+                    severity='high'
+                )
                 return jsonify({
                     "error": "Internal Server Error",
                     "message": str(e)
@@ -175,6 +183,14 @@ def role_required(allowed_roles: List[str], verify_with_supabase: bool = False):
             user_role = user.get('role', 'customer')
             
             if user_role not in allowed_roles:
+                # Log forbidden access attempt - authenticated user trying to access unauthorized resource
+                ErrorLoggingService.log_error(
+                    error_type='AuthorizationError',
+                    error_message=f"User role '{user_role}' not in allowed roles: {', '.join(allowed_roles)}",
+                    user_id=user.get('sub') if user else None,
+                    endpoint=request.path if request else None,
+                    severity='medium'
+                )
                 return jsonify({
                     "error": "Forbidden",
                     "message": f"This endpoint requires one of the following roles: {', '.join(allowed_roles)}"
