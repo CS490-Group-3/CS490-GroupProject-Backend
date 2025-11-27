@@ -75,6 +75,52 @@ def get_salon_reviews(salon_id):
         log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
+@salon_bp.route("/", methods=["GET"])
+@login_required()
+def list_salons():
+    """
+    Public list of verified salons with optional filters.
+    """
+    try:
+        services_param = request.args.get("services")
+        service_filters = services_param.split(",") if services_param else []
+        data, error = SalonService.list_salons(
+            search=request.args.get("q"),
+            location=request.args.get("location"),
+            service_names=service_filters,
+            sort=request.args.get("sort", "top"),
+        )
+        if error:
+            return jsonify({"error": error}), 400
+        return jsonify({"salons": data}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@salon_bp.route("/<salon_id>", methods=["GET"])
+@login_required()
+def get_salon_detail(salon_id):
+    """
+    Detailed info for a single salon.
+    """
+    data, error = SalonService.get_salon_detail(salon_id)
+    if error:
+        return jsonify({"error": error}), 404
+    return jsonify(data), 200
+
+
+@salon_bp.route("/<salon_id>/reviews", methods=["GET"])
+@login_required()
+def get_salon_reviews(salon_id):
+    try:
+        limit = int(request.args.get("limit", 6))
+        data, error = SalonService.list_reviews(salon_id, limit=limit)
+        if error:
+            return jsonify({"error": error}), 400
+        return jsonify({"reviews": data}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 #-----------------------------------1. SALONS (salon owners) 
 

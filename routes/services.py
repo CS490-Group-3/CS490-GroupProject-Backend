@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from middleware import login_required, role_required, get_current_user
-from middleware.error_logging import auto_log_errors
+from middleware.error_logging import auto_log_errors, log_route_error, log_service_error
 from models.services import ServiceCreateRequest, ServiceResponse
 from services.salon_service import SalonService
 from flasgger.utils import swag_from

@@ -25,10 +25,26 @@ parameters:
 responses:
   200:
     description: Review deleted successfully
+    schema:
+      type: object
+      properties:
+        message: { type: string, example: "Review deleted successfully" }
   403:
     description: User cannot delete this review
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "You can only delete your own reviews" }
   404:
     description: Review not found
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Review not found" }
   500:
     description: Internal server error
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Internal server error" }
 
