@@ -34,7 +34,6 @@ class ProductResponse(BaseModel):
 
 class ProductUpdateRequest(BaseModel):
     """Request model for updating a product."""
-    id: Optional[str] = None
     category_id: Optional[str] = Field(default=None, description="ID of the product category")
     name: Optional[str] = Field(default=None, min_length=2, max_length=100)
     description: Optional[str] = Field(default=None, max_length=500)

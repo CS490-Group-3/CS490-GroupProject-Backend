@@ -2,8 +2,7 @@ from config import supabase
 from typing import Dict, Optional, Tuple
 from gotrue.errors import AuthApiError
 import json
-import model.products
-from models.products import ProductCreateRequest, ProductResponse
+from models.products import ProductCreateRequest, ProductResponse, ProductUpdateRequest
 class ProductService:
     @staticmethod
     def create_product(
@@ -28,7 +27,7 @@ class ProductService:
         try:
             
             response = supabase.table("products").insert(data.dict()).execute()
-            if not response or response.error:
+            if not response.data:
                 return None, "Failed to create product"
 
             created_product = response.data[0] if response.data else None
@@ -70,6 +69,33 @@ class ProductService:
                 return filtered, None if filtered else None, "Products not found"
             return data, None
 
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def update_product(
+        product_id: str,
+        data: ProductUpdateRequest
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Update an existing product.
+
+        Args:
+            product_id: ID of the product to update
+            data: Dictionary of fields to update
+
+        Returns:
+            Tuple containing the updated product dict or None, and an error message or None
+        """
+        try:
+            response = supabase.table("products").update(data.dict(exclude_unset=True)).eq("id", product_id).execute()
+            data = response.data or []
+            if not data:
+                return None, "Failed to update product"
+
+            updated_product = data[0] if data[0] else None
+            return updated_product, None
         except AuthApiError as auth_error:
             return None, f"Authentication error: {str(auth_error)}"
         except Exception as e:
