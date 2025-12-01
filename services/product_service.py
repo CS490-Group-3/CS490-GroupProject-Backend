@@ -2,8 +2,32 @@ from config import supabase
 from typing import Dict, Optional, Tuple
 from gotrue.errors import AuthApiError
 import json
-from models.products import ProductCreateRequest, ProductResponse, ProductUpdateRequest
+from models.products import ProductCreateRequest, ProductResponse, ProductUpdateRequest, ProductCategoryCreateRequest, ProductCategoryUpdateRequest
 class ProductService:
+    @staticmethod
+    def get_product(
+        product_id: str
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Get a product by its ID.
+
+        Args:
+            product_id: ID of the product to retrieve
+
+        Returns:
+            Tuple containing the product dict or None, and an error message or None
+        """
+        try:
+            response = supabase.table("products").select("*").eq("id", product_id).single().execute()
+            data = response.data
+            if not data:
+                return None, "Product not found"
+
+            return data, None
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return None, str(e)
     @staticmethod
     def create_product(
         data: ProductCreateRequest
@@ -96,6 +120,77 @@ class ProductService:
 
             updated_product = data[0] if data[0] else None
             return updated_product, None
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return None, str(e)
+#----- Category Service -----#
+    @staticmethod
+    def list_product_categories() -> Tuple[Optional[list], Optional[str]]:
+        """
+        List all product categories.
+
+        Returns:
+            Tuple containing a list of product categories or None, and an error message or None
+        """
+        try:
+            response = supabase.table("product_categories").select("*").execute()
+            data = response.data or []
+            if not data:
+                return None, "Product categories not found"
+
+            return data, None
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def get_category(category_id: str) -> Tuple[Optional[list], Optional[str]]:
+        """
+        Get a product category by its ID.
+
+        Args:
+            category_id: ID of the product category to retrieve
+
+        Returns:
+            Tuple containing a list with the category dict or None, and an error message or None
+        """
+        try:
+            response = supabase.table("product_categories").select("*").eq("id", category_id).execute()
+            data = response.data or []
+            if not data:
+                return None, "Product category not found"
+
+            return data, None
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def create_product_category(
+        data: ProductCategoryCreateRequest
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Create a new product category.
+
+        Args:
+            name: Name of the category
+            description: Optional description of the category
+            parent_category_id: Optional ID of the parent category
+
+        Returns:
+            Tuple containing the created category dict or None, and an error message or None
+        """
+        try:
+            check_response = supabase.table("product_categories").select("*").ilike("name", data.name).execute()
+            if check_response.data:
+                return None, "Product category with this name already exists"
+            response = supabase.table("product_categories").insert(data.dict()).execute()
+            if not response.data:
+                return None, "Failed to create product category"
+
+            created_category = response.data[0] if response.data else None
+            return created_category, None
         except AuthApiError as auth_error:
             return None, f"Authentication error: {str(auth_error)}"
         except Exception as e:

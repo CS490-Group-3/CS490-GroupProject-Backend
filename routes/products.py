@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, g, json
 from pydantic import ValidationError
 from middleware.auth import login_required, role_required, get_current_user
 
-from models.products import ProductCreateRequest, ProductResponse, ProductUpdateRequest
+from models.products import ProductCreateRequest, ProductResponse, ProductUpdateRequest, ProductCategoryCreateRequest, ProductCategoryResponse, ProductCategoryUpdateRequest
 from services.product_service import ProductService
 from services.salon_service import SalonService
 from flasgger.utils import swag_from
@@ -64,7 +64,19 @@ def create_product_route():
         return jsonify({"error": ve.errors()}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
+@products_bp.route("/<product_id>", methods=["GET"])
+@login_required()
+def get_product_route(product_id):
+    """
+    Get a product by ID.
+    """
+    try:
+        result, error = ProductService.get_product(product_id)
+        if error:
+            return jsonify({"error": error}), 404
+        return jsonify({"product": ProductResponse.model_validate(result).model_dump()}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 @products_bp.route("/<product_id>", methods=["PATCH"])
 @login_required()
 @role_required(['salon_owner'])
@@ -91,5 +103,63 @@ def update_product_route(product_id):
         return jsonify({"message": "Product updated successfully", "product": ProductResponse.model_validate(result).model_dump()}), 200
     except ValidationError as ve:
         return jsonify({"error": ve.errors()}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+#---- Category Routes ----#
+@products_bp.route("/categories", methods=["GET"])
+@login_required()
+def list_product_categories_route():
+    """
+    List all product categories.
+    """
+    try:
+        categories, error = ProductService.list_product_categories()
+        if error:
+            return jsonify({"error": error}), 400
+        return jsonify({"categories": categories}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@products_bp.route("/categories", methods=["POST"])
+@login_required()
+@role_required(['admin', 'salon_owner'])
+def create_product_category_route():
+    """
+    Create a new product category.
+    {
+        name: str,
+        description: str (optional),
+        parent_category_id: str (optional)
+    }
+    """
+    try:
+        json_data = request.get_json()
+        if not json_data:
+            return jsonify({"error": "Invalid JSON body"}), 400
+        data = ProductCategoryCreateRequest(**json_data)
+        if not data:
+            return jsonify({"error": "Invalid category data"}), 400
+        
+        category, error = ProductService.create_product_category(data)
+        if error:
+            return jsonify({"error": error}), 400
+        return jsonify({"message": "Category created successfully", "category": category}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@products_bp.route("/categories/<category_id>", methods=["GET"])
+@login_required()
+def get_product_category_route(category_id):
+    """
+    Get a product category by ID.
+    """
+    try:
+        category, error = ProductService.get_category(category_id)
+        if error:
+            return jsonify({"error": error}), 400
+        if not category:
+            return jsonify({"error": "Category not found"}), 404
+        return jsonify({"data": category[0]}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
