@@ -536,53 +536,108 @@ class NotificationService:
 
     @staticmethod
     def barber_running_late(user_id: str, appointment_id: str):
+        """
+        Notify customer that barber is running late for an appointment.
+        Returns (data, error) tuple following service pattern.
+        """
+        try:
+            # Get barber profile for this user
+            barber_resp = (
+                supabase.table("barbers")
+                .select("id")
+                .eq("user_id", user_id)
+                .single()
+                .execute()
+            )
+            
+            if getattr(barber_resp, "error", None) or not barber_resp.data:
+                return None, "You are not registered as a barber"
 
-        # Get barber profile for this user
-        barber = (
-            supabase.table("barbers")
-            .select("id")
-            .eq("user_id", user_id)
-            .single()
-            .execute()
-        ).data
+            barber_profile_id = barber_resp.data["id"]
 
-        if not barber:
-            return {"error": "You are not registered as a barber"}, 403
+            # Fetch the appointment
+            appt_resp = (
+                supabase.table("appointments")
+                .select("id, barber_id, customer_id, salon_id, service_id, start_at")
+                .eq("id", appointment_id)
+                .single()
+                .execute()
+            )
 
-        barber_profile_id = barber["id"]
+            if getattr(appt_resp, "error", None) or not appt_resp.data:
+                return None, "Appointment not found"
 
-        # Fetch the appointment
-        res = (
-            supabase.table("appointments")
-            .select("id, barber_id, customer_id, salon_id, start_at")
-            .eq("id", appointment_id)
-            .single()
-            .execute()
-        )
+            appt = appt_resp.data
 
-        appt = res.data
-        if not appt:
-            return {"error": "Appointment not found"}, 404
+            # Authorization check
+            if appt["barber_id"] != barber_profile_id:
+                return None, "Forbidden"
 
-        # Correct authorization check
-        if appt["barber_id"] != barber_profile_id:
-            return {"error": "You are not assigned to this appointment"}, 403
+            # Fetch appointment details for notification message
+            salon_name = "the salon"
+            service_name = "your service"
+            appt_time = ""
+            
+            try:
+                # Fetch salon name
+                if appt.get("salon_id"):
+                    salon_resp = (
+                        supabase.table("salons")
+                        .select("name")
+                        .eq("id", appt["salon_id"])
+                        .single()
+                        .execute()
+                    )
+                    if salon_resp.data and salon_resp.data.get("name"):
+                        salon_name = salon_resp.data["name"]
+                
+                # Fetch service name
+                if appt.get("service_id"):
+                    service_resp = (
+                        supabase.table("services")
+                        .select("name")
+                        .eq("id", appt["service_id"])
+                        .single()
+                        .execute()
+                    )
+                    if service_resp.data and service_resp.data.get("name"):
+                        service_name = service_resp.data["name"]
+                
+                # Format appointment time
+                if appt.get("start_at"):
+                    try:
+                        start_dt = datetime.fromisoformat(appt["start_at"].replace("Z", "+00:00"))
+                        appt_time = start_dt.strftime("%I:%M %p")
+                    except Exception:
+                        pass
+            except Exception as e:
+                ErrorLoggingService.log_exception(e, severity='low')
+                # Continue with defaults if fetching details fails
 
-        # Create notification for customer
-        notif = {
-            "id": str(uuid.uuid4()),
-            "user_id": appt["customer_id"],
-            "notification_type": "barber_running_late",
-            "title": "Your barber is running late",
-            "message": "Your barber has indicated they are running a little behind schedule.",
-            "status": "sent",
-            "related_id": appointment_id,
-            "created_at": datetime.utcnow().isoformat(),
-            "scheduled_for": datetime.utcnow().isoformat(),
-        }
+            # Create notification for customer with appointment details
+            message = f"Your barber is running a little behind schedule for your {service_name} appointment at {salon_name}"
+            if appt_time:
+                message += f" scheduled for {appt_time}."
+            else:
+                message += "."
 
-        supabase.table("notifications").insert(notif).execute()
+            notif = {
+                "id": str(uuid.uuid4()),
+                "user_id": appt["customer_id"],
+                "notification_type": "barber_running_late",
+                "title": "Your barber is running late",
+                "message": message,
+                "status": "sent",
+                "related_id": appointment_id,
+                "created_at": datetime.utcnow().isoformat(),
+                "scheduled_for": datetime.utcnow().isoformat(),
+            }
 
-        return {"success": True}, 200
+            supabase.table("notifications").insert(notif).execute()
+
+            return {"success": True, "message": "Customer has been notified that you are running late"}, None
+        except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
+            return None, str(e)
 
 

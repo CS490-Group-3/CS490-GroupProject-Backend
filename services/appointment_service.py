@@ -300,6 +300,23 @@ class AppointmentService:
                     "avatar": row.get("profile_image_url"),
                 }
 
+        # Check for "barber_running_late" notifications for each appointment
+        running_late_map = {}
+        if appointment_ids:
+            try:
+                late_notifs = (
+                    supabase.table("notifications")
+                    .select("related_id")
+                    .in_("related_id", appointment_ids)
+                    .eq("notification_type", "barber_running_late")
+                    .execute()
+                )
+                for notif in (late_notifs.data or []):
+                    if notif.get("related_id"):
+                        running_late_map[notif["related_id"]] = True
+            except Exception:
+                pass  # If notification check fails, just continue without it
+
         hydrated = []
         for row in rows:
             enriched = dict(row)
@@ -309,6 +326,8 @@ class AppointmentService:
             enriched["customer"] = customers.get(row.get("customer_id"))
             if row.get("id") in reviews_map:
                 enriched["review"] = reviews_map[row["id"]]
+            # Add flag if barber is running late
+            enriched["barber_running_late"] = running_late_map.get(row.get("id"), False)
             hydrated.append(enriched)
         return hydrated
 

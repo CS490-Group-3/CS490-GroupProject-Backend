@@ -338,20 +338,31 @@ def mark_completed(appointment_id):
     return jsonify(data), 200
 
 #POST /<appointment_id>/running-late
-@appointments_bp.post("/<appointment_id>/running-late")
+@appointments_bp.route("/<appointment_id>/running-late", methods=["POST"])
 @auto_log_errors
 @login_required()
 @role_required(["barber"])   
 @swag_from("../docs/appointment_running_late.yml")
 def mark_running_late(appointment_id):
-    user = get_current_user()
-
-    updated = NotificationService.barber_running_late(
-        user_id=user["sub"],
-        appointment_id=appointment_id
-    )
-
-    return jsonify(updated), 200
+    """Notify customer that barber is running late for this appointment."""
+    try:
+        user = get_current_user()
+        data, error = NotificationService.barber_running_late(
+            user_id=user["sub"],
+            appointment_id=appointment_id
+        )
+        
+        if error == "Forbidden":
+            log_service_error(error, severity='medium')
+            return jsonify({"error": error}), 403
+        elif error:
+            log_service_error(error)
+            return jsonify({"error": error}), 400
+        
+        return jsonify(data), 200
+    except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
 
 
 #GET /<appointment_id>
