@@ -1,0 +1,55 @@
+---
+tags:
+  - Admin
+summary: Calculate and store platform metrics
+description: >
+  Calculate and store platform metrics for a specific date or today. Metrics include
+  total users, active users, users by role, total salons, active salons, total appointments, and total revenue.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+  - in: body
+    name: body
+    required: false
+    schema:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          description: "Date to calculate metrics for (YYYY-MM-DD, default: today)"
+          example: "2024-01-15"
+responses:
+  200:
+    description: Platform metrics calculated and stored successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+        metrics:
+          type: object
+          properties:
+            timestamp:
+              type: string
+            date:
+              type: string
+            users:
+              type: object
+            salons:
+              type: object
+            appointments:
+              type: object
+            revenue:
+              type: object
+  400:
+    description: Bad request (invalid date format)
+  403:
+    description: Forbidden
+  500:
+    description: Internal server error
+
