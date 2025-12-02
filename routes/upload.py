@@ -17,7 +17,7 @@ def upload_file(file_type):
         salon_id = request.form.get("salon_id")
         file = request.files.get("file")
 
-        if file_type not in ["logo", "license", "profile"]:
+        if file_type not in ["logo", "license", "profile", "product"]:
             return jsonify({"error": "Invalid file type"}), 400
         if not file or (file_type != "profile" and not salon_id):
             return jsonify({"error": "Missing file or salon_id"}), 400
@@ -30,7 +30,8 @@ def upload_file(file_type):
 
         return jsonify({
             "message": "File uploaded successfully",
-            "url": url,
+            "filepath": url["filepath"],
+            "url": url["signed_url"],
             "file_type": file_type
         }), 200
 

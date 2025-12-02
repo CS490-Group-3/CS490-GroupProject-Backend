@@ -15,7 +15,8 @@ class StorageService:
         """
         bucket_map = {
             "license": "salon-documents",
-            "logo": "salon-logos"
+            "logo": "salon-logos",
+            "product": "salon-products"
         }
 
         # Pick correct bucket or default
@@ -45,7 +46,7 @@ class StorageService:
         else:
             print(f"[storage signed url] success bucket={bucket_name} path={filename}")
 
-        return signed["signedURL"]
+        return {"signed_url":signed["signedURL"], "filepath": filename}
 
 
     @staticmethod
