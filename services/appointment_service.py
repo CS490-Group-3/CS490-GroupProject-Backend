@@ -186,6 +186,7 @@ class AppointmentService:
             user_ids = [row["user_id"] for row in barbers_rows if row.get("user_id")]
             profiles = {}
             if user_ids:
+                # First try user_profiles; if none found, fall back to user_details view
                 try:
                     prof = (
                         supabase.table("user_profiles")
@@ -193,7 +194,23 @@ class AppointmentService:
                         .in_("user_id", user_ids)
                         .execute()
                     )
-                    profiles = {row["user_id"]: row for row in (prof.data or [])}
+                    if prof.data:
+                        profiles = {row["user_id"]: row for row in (prof.data or [])}
+                    else:
+                        alt = (
+                            supabase.table("user_details")
+                            .select("id,first_name,last_name,profile_image_url")
+                            .in_("id", user_ids)
+                            .execute()
+                        )
+                        profiles = {
+                            row["id"]: {
+                                "first_name": row.get("first_name"),
+                                "last_name": row.get("last_name"),
+                                "profile_image_url": row.get("profile_image_url"),
+                            }
+                            for row in (alt.data or [])
+                        }
                 except Exception:
                     alt = (
                         supabase.table("user_details")
@@ -254,12 +271,20 @@ class AppointmentService:
         customers = {}
         if customer_ids:
             try:
+                # First try user_profiles; if no rows, fall back to user_details view
                 cust_resp = (
                     supabase.table("user_profiles")
                     .select("user_id,first_name,last_name,profile_image_url")
                     .in_("user_id", list(customer_ids))
                     .execute()
                 )
+                if not cust_resp.data:
+                    cust_resp = (
+                        supabase.table("user_details")
+                        .select("id,first_name,last_name,profile_image_url")
+                        .in_("id", list(customer_ids))
+                        .execute()
+                    )
             except Exception:
                 cust_resp = (
                     supabase.table("user_details")

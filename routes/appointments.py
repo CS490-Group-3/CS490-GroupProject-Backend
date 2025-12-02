@@ -67,6 +67,7 @@ def list_appointments():
         status_param = request.args.get("status")
         status = status_param.split(",") if status_param else None
         page = int(request.args.get("page", 1))
+        # Sensible default page size; callers that need more should pass ?limit=
         limit = int(request.args.get("limit", 20))
 
         salon_id = request.args.get("salon_id")

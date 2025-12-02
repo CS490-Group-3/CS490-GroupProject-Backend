@@ -524,16 +524,22 @@ class AuthService:
             Tuple of (barber_id, error_message)
         """
         try:
-            response = supabase.table('barbers')\
-                .select('id')\
-                .eq('user_id', user_id)\
+            response = (
+                supabase.table('barbers')
+                .select('id,salon_id')
+                .eq('user_id', user_id)
                 .execute()
+            )
             
-            print("Barber response:", response)
-            if response.data:
-                return response.data[0]['id'], None
-            else:
+            rows = response.data or []
+            if not rows:
                 return None, "Barber not found for the given user ID"
+            
+            # Prefer the barber record that is actually attached to a salon,
+            # since appointments for a salon use that barber_id.
+            with_salon = [row for row in rows if row.get('salon_id')]
+            target = with_salon[0] if with_salon else rows[0]
+            return target.get('id'), None
                 
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')

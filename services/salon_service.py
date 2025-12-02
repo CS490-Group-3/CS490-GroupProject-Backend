@@ -3,6 +3,7 @@ from datetime import datetime, time as dt_time
 from services.upload_file import StorageService
 from services.audit_logging_service import AuditLoggingService
 from services.error_logging_service import ErrorLoggingService
+from services.schedule_service import ScheduleService
 from zoneinfo import ZoneInfo
 import uuid
 import traceback
@@ -404,6 +405,34 @@ class SalonService:
                     new_values=barber_data,
                     changed_by=None  # Could get from context if needed
                 )
+
+                # Initialize default barber availability based on salon_hours
+                try:
+                    hours_resp = (
+                        supabase.table("salon_hours")
+                        .select("day_of_week,open_time,close_time,is_closed")
+                        .eq("salon_id", salon_id)
+                        .execute()
+                    )
+                    for row in hours_resp.data or []:
+                        if row.get("is_closed"):
+                            continue
+                        day = row.get("day_of_week")
+                        open_time = row.get("open_time")
+                        close_time = row.get("close_time")
+                        if day is None or not open_time or not close_time:
+                            continue
+                        # Best-effort: create availability; ignore errors such as duplicates
+                        ScheduleService.create_availability(
+                            barber_id=created_id,
+                            day_of_week=day,
+                            start_time=open_time,
+                            end_time=close_time,
+                            is_active=True,
+                        )
+                except Exception as e:
+                    # Don't block adding the barber if availability seeding fails
+                    ErrorLoggingService.log_exception(e, severity='medium')
             
             return {"message": "Service provider added to salon successfully"}, None
         except Exception as e:
@@ -515,6 +544,7 @@ class SalonService:
             user_ids = [row["user_id"] for row in rows if row.get("user_id")]
             profiles = {}
             if user_ids:
+                # First try user_profiles; if no matching rows, fall back to user_details view
                 try:
                     prof_res = (
                         supabase.table("user_profiles")
@@ -522,8 +552,25 @@ class SalonService:
                         .in_("user_id", user_ids)
                         .execute()
                     )
-                    profiles = {row["user_id"]: row for row in (prof_res.data or [])}
+                    if prof_res.data:
+                        profiles = {row["user_id"]: row for row in (prof_res.data or [])}
+                    else:
+                        alt = (
+                            supabase.table("user_details")
+                            .select("id,first_name,last_name,profile_image_url")
+                            .in_("id", user_ids)
+                            .execute()
+                        )
+                        profiles = {
+                            row["id"]: {
+                                "first_name": row.get("first_name"),
+                                "last_name": row.get("last_name"),
+                                "profile_image_url": row.get("profile_image_url"),
+                            }
+                            for row in (alt.data or [])
+                        }
                 except Exception:
+                    # On any error, also fall back to user_details
                     alt = (
                         supabase.table("user_details")
                         .select("id,first_name,last_name,profile_image_url")
