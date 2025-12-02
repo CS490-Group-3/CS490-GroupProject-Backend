@@ -707,6 +707,43 @@ class AnalyticsService:
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Failed to get retention metrics: {str(e)}"
+
+    @staticmethod
+    def get_daily_statistics(start_date: date, end_date: date) -> Tuple[Dict, Optional[str]]:
+        """
+        Get raw daily statistics rows from daily_statistics table for a date range.
+        Returns platform-wide rows (salon_id IS NULL) ordered by date ascending.
+        """
+        try:
+            start_str = start_date.isoformat()
+            end_str = end_date.isoformat()
+
+            stats = (
+                supabase.table("daily_statistics")
+                .select(
+                    "date, total_appointments, completed_appointments, cancelled_appointments, "
+                    "total_revenue, new_customers, returning_customers, average_rating, "
+                    "loyalty_points_earned, loyalty_points_redeemed, created_at"
+                )
+                .gte("date", start_str)
+                .lte("date", end_str)
+                .is_("salon_id", "null")
+                .order("date", desc=False)
+                .execute()
+            )
+
+            rows = stats.data or []
+
+            return {
+                "period": {
+                    "start_date": start_str,
+                    "end_date": end_str,
+                },
+                "rows": rows,
+            }, None
+        except Exception as e:
+            ErrorLoggingService.log_exception(e, severity="high")
+            return None, f"Failed to get daily statistics: {str(e)}"
     
     @staticmethod
     def calculate_and_store_platform_metrics(target_date: Optional[date] = None) -> Tuple[Dict, Optional[str]]:

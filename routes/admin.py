@@ -15,6 +15,7 @@ from datetime import datetime, date
 from typing import Optional
 import os
 import jwt
+import json
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
@@ -377,7 +378,63 @@ def get_loyalty_metrics():
         return jsonify({"error": str(e)}), 500
 
 
+@admin_bp.route('/daily-statistics/export/csv', methods=['GET'])
+@auto_log_errors
+@role_required(['admin'], verify_with_supabase=True)
+def export_daily_statistics_csv():
+    """
+    Export daily statistics rows as a CSV table for a date range.
 
+    Query Parameters:
+        - start_date (YYYY-MM-DD, required)
+        - end_date   (YYYY-MM-DD, required)
+    """
+    try:
+        start_date_str = request.args.get("start_date")
+        end_date_str = request.args.get("end_date")
+
+        if not start_date_str or not end_date_str:
+            return jsonify({"error": "start_date and end_date are required"}), 400
+
+        start_date = datetime.fromisoformat(start_date_str).date()
+        end_date = datetime.fromisoformat(end_date_str).date()
+
+        stats, error = AnalyticsService.get_daily_statistics(start_date, end_date)
+        if error:
+            return jsonify({"error": error}), 500
+
+        rows = stats.get("rows", []) if isinstance(stats, dict) else []
+
+        columns = [
+            {"key": "date", "label": "Date"},
+            {"key": "total_appointments", "label": "Total Appointments"},
+            {"key": "completed_appointments", "label": "Completed"},
+            {"key": "cancelled_appointments", "label": "Cancelled"},
+            {"key": "new_customers", "label": "New Customers"},
+            {"key": "returning_customers", "label": "Returning Customers"},
+            {"key": "total_revenue", "label": "Total Revenue"},
+            {"key": "average_rating", "label": "Average Rating"},
+            {"key": "loyalty_points_earned", "label": "Loyalty Points Earned"},
+            {"key": "loyalty_points_redeemed", "label": "Loyalty Points Redeemed"},
+            {"key": "created_at", "label": "Last Updated At"},
+        ]
+
+        csv_string, filename = ExportService.export_rows_to_csv(
+            rows=rows,
+            columns=columns,
+            filename_prefix="daily_statistics",
+        )
+
+        return Response(
+            csv_string,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except ValueError as e:
+        return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
+    except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
 
 
 @admin_bp.route('/metrics/retention', methods=['GET'])
@@ -539,6 +596,44 @@ def calculate_daily_statistics():
         return jsonify({"error": str(e)}), 500
 
 
+@admin_bp.route('/daily-statistics', methods=['GET'])
+@auto_log_errors
+@role_required(['admin'], verify_with_supabase=True)
+def get_daily_statistics():
+    """
+    Get raw daily statistics rows for a date range.
+
+    Query Parameters:
+        - start_date (YYYY-MM-DD, required)
+        - end_date   (YYYY-MM-DD, required)
+    """
+    try:
+        start_date_str = request.args.get("start_date")
+        end_date_str = request.args.get("end_date")
+
+        if not start_date_str or not end_date_str:
+            return jsonify({"error": "start_date and end_date are required"}), 400
+
+        start_date = datetime.fromisoformat(start_date_str).date()
+        end_date = datetime.fromisoformat(end_date_str).date()
+
+        stats, error = AnalyticsService.get_daily_statistics(start_date, end_date)
+        if error:
+            return jsonify({"error": error}), 500
+
+        return jsonify(
+            {
+                "message": "Daily statistics retrieved successfully",
+                "daily_statistics": stats,
+            }
+        ), 200
+    except ValueError as e:
+        return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
+    except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
+
+
 
 
 
@@ -610,70 +705,118 @@ def export_metrics_csv(metrics_type: str):
 
 
 
-@admin_bp.route('/metrics/<metrics_type>/export/pdf', methods=['GET'])
+@admin_bp.route('/error-logs/export/csv', methods=['GET'])
 @auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
-@swag_from("../docs/admin_export_pdf.yml")
-def export_metrics_pdf(metrics_type: str):
+def export_error_logs_csv():
     """
-    Export metrics to PDF format.
-    
-    Path Parameters:
-        - metrics_type: Type of metrics (engagement, appointments, revenue, loyalty, retention, demographics, platform)
+    Export error logs to CSV.
     
     Query Parameters:
-        - start_date: Start date (YYYY-MM-DD) - required for date-range metrics
-        - end_date: End date (YYYY-MM-DD) - required for date-range metrics
+        - limit: Max number of records (default: 1000)
+        - severity: Optional severity filter
+        - start_date, end_date: Optional ISO date strings to filter by created_at
     """
     try:
-        start_date_str = request.args.get('start_date')
-        end_date_str = request.args.get('end_date')
+        limit = int(request.args.get("limit", 1000))
+        severity = request.args.get("severity")
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
         
-        # Get metrics data
-        if metrics_type == 'demographics':
-            metrics, error = DemographicsService.get_demographics_aggregation()
-        elif metrics_type == 'platform':
-            metrics, error = AnalyticsService.get_platform_metrics(use_stored=True)
-        else:
-            if not start_date_str or not end_date_str:
-                return jsonify({"error": "start_date and end_date are required"}), 400
-            
-            start_date = datetime.fromisoformat(start_date_str).date()
-            end_date = datetime.fromisoformat(end_date_str).date()
-            
-            if metrics_type == 'engagement':
-                metrics, error = AnalyticsService.get_engagement_metrics(start_date, end_date)
-            elif metrics_type == 'appointments':
-                metrics, error = AnalyticsService.get_appointment_metrics(start_date, end_date)
-            elif metrics_type == 'revenue':
-                metrics, error = AnalyticsService.get_revenue_metrics(start_date, end_date)
-            elif metrics_type == 'loyalty':
-                metrics, error = AnalyticsService.get_loyalty_metrics(start_date, end_date)
-            elif metrics_type == 'retention':
-                metrics, error = AnalyticsService.get_retention_metrics(start_date, end_date)
-            else:
-                return jsonify({"error": f"Unknown metrics type: {metrics_type}"}), 400
-        
+        logs, error = ErrorLoggingService.get_error_logs(
+            limit=limit,
+            severity=severity,
+            start_date=start_date,
+            end_date=end_date,
+        )
         if error:
             return jsonify({"error": error}), 500
         
-        # Export to PDF
-        pdf_bytes, filename = ExportService.export_to_pdf(metrics, metrics_type)
-        
-        return Response(
-            pdf_bytes,
-            mimetype='application/pdf',
-            headers={
-                'Content-Disposition': f'attachment; filename={filename}'
-            }
+        columns = [
+            {"key": "created_at", "label": "Timestamp"},
+            {"key": "severity", "label": "Severity"},
+            {"key": "error_type", "label": "Type"},
+            {"key": "error_message", "label": "Message"},
+            {"key": "endpoint", "label": "Endpoint"},
+            {"key": "user_id", "label": "User ID"},
+        ]
+        csv_string, filename = ExportService.export_rows_to_csv(
+            rows=logs,
+            columns=columns,
+            filename_prefix="error_logs",
         )
-        
-    except ValueError as e:
-        return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
+        return Response(
+            csv_string,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
     except Exception as e:
         log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
-
-
+@admin_bp.route('/audit-logs/export/csv', methods=['GET'])
+@auto_log_errors
+@role_required(['admin'], verify_with_supabase=True)
+def export_audit_logs_csv():
+    """
+    Export audit logs to CSV.
+    
+    Query Parameters mirror /admin/audit-logs:
+        - limit
+        - table_name
+        - record_id
+        - action
+        - changed_by
+        - start_date, end_date
+    """
+    try:
+        limit = int(request.args.get("limit", 1000))
+        table_name = request.args.get("table_name")
+        record_id = request.args.get("record_id")
+        action = request.args.get("action")
+        changed_by = request.args.get("changed_by")
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
+        
+        logs, error = AuditLoggingService.get_audit_logs(
+            limit=limit,
+            table_name=table_name,
+            record_id=record_id,
+            action=action,
+            changed_by=changed_by,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        if error:
+            return jsonify({"error": error}), 500
+        
+        # old_values/new_values are JSON; stringify for CSV
+        for row in logs or []:
+            if isinstance(row.get("old_values"), (dict, list)):
+                row["old_values"] = json.dumps(row["old_values"])
+            if isinstance(row.get("new_values"), (dict, list)):
+                row["new_values"] = json.dumps(row["new_values"])
+        
+        columns = [
+            {"key": "created_at", "label": "Timestamp"},
+            {"key": "table_name", "label": "Table"},
+            {"key": "record_id", "label": "Record ID"},
+            {"key": "action", "label": "Action"},
+            {"key": "changed_by", "label": "Changed By"},
+            {"key": "old_values", "label": "Old Values"},
+            {"key": "new_values", "label": "New Values"},
+        ]
+        csv_string, filename = ExportService.export_rows_to_csv(
+            rows=logs,
+            columns=columns,
+            filename_prefix="audit_logs",
+        )
+        return Response(
+            csv_string,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
