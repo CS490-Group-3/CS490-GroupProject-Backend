@@ -1,17 +1,19 @@
 from flask import Blueprint, request, jsonify, g, json
 from pydantic import ValidationError
 from middleware.auth import login_required, role_required, get_current_user
-
+from werkzeug.utils import secure_filename
 from models.products import ProductCreateRequest, ProductResponse, ProductUpdateRequest, ProductCategoryCreateRequest, ProductCategoryResponse, ProductCategoryUpdateRequest
 from services.product_service import ProductService
 from services.salon_service import SalonService
 from flasgger.utils import swag_from
+from services.upload_file import StorageService
 
 
 products_bp = Blueprint("products_bp", __name__, url_prefix="/api/products")
 
 @products_bp.route("", methods=["GET"])
 @login_required()
+@swag_from("../docs/products_list_products.yml")
 def list_products_route():
     """
     List products globally or for a specific salon.
@@ -37,6 +39,7 @@ def list_products_route():
 @products_bp.route("/", methods=["POST"])
 @login_required()
 @role_required(['salon_owner'])
+@swag_from("../docs/products_create_product.yml")
 def create_product_route():
     """
     Create a new product for a salon.
@@ -49,10 +52,19 @@ def create_product_route():
         if not salon_id:
             return jsonify({"error": "User does not own a salon"}), 403
         
-        json_data = request.get_json()
+        json_data = request.form.to_dict()
+        print(json_data)
         if not json_data:
             return jsonify({"error": "Invalid JSON body"}), 400
         json_data["salon_id"] = salon_id
+        file = request.files.get("file")
+        if file:
+            original_ext = file.filename.rsplit(".", 1)[-1]
+            name = json_data.get("name", file.filename.rsplit(".", 1)[0])
+            file.filename = secure_filename(f"{name}.{original_ext}")
+            upload_url = StorageService.upload_file(file, salon_id, "product")
+            json_data["image_url"] = upload_url['filepath']
+            
         data = ProductCreateRequest(**json_data)
         if not data:
             return jsonify({"error": "Invalid product data"}), 400

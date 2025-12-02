@@ -1,0 +1,51 @@
+---
+tags:
+  - Products
+summary: List products globally or for a specific salon
+description: Retrieve a list of products. Can filter by salon and optionally by category.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      properties:
+        salon_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        category_id:
+          type: array
+          items:
+            type: string
+            format: uuid
+          example: ["123e4567-e89b-12d3-a456-426614174001"]
+responses:
+  200:
+    description: Products retrieved successfully
+    schema:
+      type: object
+      properties:
+        products:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              price:
+                type: number
+                format: float
+              # Add other properties as needed
+  400:
+    description: Bad request - missing salon_id
+  500:
+    description: Internal server error

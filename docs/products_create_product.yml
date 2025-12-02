@@ -1,0 +1,81 @@
+---
+tags:
+  - Products
+summary: Create a new product for a salon
+description: Create a new product. Only salon owners can create products. Image upload is optional.
+consumes:
+  - multipart/form-data
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+  - in: formData
+    name: name
+    type: string
+    required: true
+    minLength: 2
+    maxLength: 100
+    description: Product name
+  - in: formData
+    name: category_id
+    type: string
+    format: uuid
+    required: false
+    description: ID of the product category
+  - in: formData
+    name: description
+    type: string
+    required: false
+    maxLength: 500
+    description: Product description
+  - in: formData
+    name: price
+    type: string
+    required: true
+    description: Product price
+  - in: formData
+    name: stock_quantity
+    type: integer
+    required: false
+    minimum: 0
+    description: Stock quantity
+  - in: formData
+    name: is_active
+    type: boolean
+    required: false
+    default: true
+    description: Whether the product is active
+  - in: formData
+    name: file
+    type: file
+    required: false
+    description: Product image file
+responses:
+  201:
+    description: Product created successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Product created successfully"
+        product:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            price:
+              type: number
+              format: float
+            # Add other properties as needed
+  400:
+    description: Bad request - invalid data
+  403:
+    description: Forbidden - user is not a salon owner
+  500:
+    description: Internal server error
