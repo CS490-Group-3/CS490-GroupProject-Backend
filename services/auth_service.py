@@ -6,7 +6,7 @@ from config import supabase
 from typing import Dict, Optional, Tuple
 from gotrue.errors import AuthApiError
 import json
-
+import re
 class AuthService:
         
     @staticmethod
@@ -293,7 +293,10 @@ class AuthService:
             if last_name is not None:
                 update_data['last_name'] = last_name
             if phone is not None:
-                update_data['phone'] = phone
+                phone_number = re.sub(r'\D', '', phone)
+                if len(phone_number) != 10:
+                    return None, "Invalid phone number format"
+                update_data['phone'] = phone_number
             if profile_image_url is not None:
                 update_data['profile_image_url'] = profile_image_url
             if date_of_birth is not None:
