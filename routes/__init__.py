@@ -15,5 +15,7 @@ from . import review_responses
 from .notifications import notifications_bp 
 from .admin import admin_bp
 from .users import users_bp
-__all__ = ['health_bp', 'auth_bp', 'appointments_bp', 'schedule_bp', 'salon_bp', 'upload_bp', 'services_bp', 'admin_bp', 'users_bp', 'reviews_bp', 'notifications_bp' ]
+from .products import products_bp
+from .orders import order_bp
+__all__ = ['health_bp', 'auth_bp', 'appointments_bp', 'schedule_bp', 'salon_bp', 'upload_bp', 'services_bp', 'admin_bp', 'users_bp', 'reviews_bp', 'notifications_bp', 'products_bp', 'order_bp']
 

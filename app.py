@@ -7,7 +7,7 @@ from config import FLASK_DEBUG
 import sys
 from flasgger import Swagger
 
-from routes import health_bp, auth_bp, appointments_bp, schedule_bp, salon_bp, upload_bp, services_bp, admin_bp, users_bp, reviews_bp, notifications_bp
+from routes import health_bp, auth_bp, appointments_bp, schedule_bp, salon_bp, upload_bp, services_bp, admin_bp, users_bp, reviews_bp, notifications_bp, products_bp, order_bp
 
 
 def create_app():
@@ -42,6 +42,8 @@ def create_app():
     app.register_blueprint(notifications_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(users_bp)
+    app.register_blueprint(products_bp)
+    app.register_blueprint(order_bp)
     # Error handlers
     @app.errorhandler(404)
     def not_found(error):
