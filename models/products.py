@@ -13,7 +13,7 @@ class ProductCreateRequest(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
     price: str
     stock_quantity: Optional[int] = Field(None, ge=0)
-    image_url: Optional[str] = Field(None, max_length=255)
+    image_url: Optional[str] = Field(None)
     is_active: Optional[bool] = True
     
 class ProductResponse(BaseModel):
