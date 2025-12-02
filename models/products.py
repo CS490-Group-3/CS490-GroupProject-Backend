@@ -25,7 +25,7 @@ class ProductResponse(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
     price: float
     stock_quantity: Optional[int] = Field(None, ge=0)
-    image_url: Optional[str] = Field(None, max_length=255)
+    image_url: Optional[str] = Field(None)
     is_active: Optional[bool] = True
     created_at: datetime
     updated_at: Optional[datetime]
@@ -39,7 +39,7 @@ class ProductUpdateRequest(BaseModel):
     description: Optional[str] = Field(default=None, max_length=500)
     price: Optional[str] = None
     stock_quantity: Optional[int] = Field(default=None, ge=0)
-    image_url: Optional[str] = Field(default=None, max_length=255)
+    image_url: Optional[str] = Field(default=None)
     is_active: Optional[bool] = None
 
 #--------Product Category Models--------#
