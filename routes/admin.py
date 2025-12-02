@@ -7,16 +7,21 @@ from flasgger.utils import swag_from
 from services.demographics_service import DemographicsService
 from services.analytics_service import AnalyticsService
 from services.export_service import ExportService
+from services.error_logging_service import ErrorLoggingService
+from services.audit_logging_service import AuditLoggingService
 from middleware import role_required
+from middleware.error_logging import auto_log_errors, log_route_error, log_service_error
 from datetime import datetime, date
 from typing import Optional
 import os
 import jwt
+import json
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
 
 @admin_bp.route('/demographics', methods=['GET'])
+@auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
 @swag_from("../docs/admin_demographics.yml")
 def get_demographics():
@@ -82,10 +87,12 @@ def get_demographics():
             }), 200
             
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @admin_bp.route('/metrics/engagement', methods=['GET'])
+@auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
 @swag_from("../docs/admin_metrics_engagement.yml")
 def get_engagement_metrics():
@@ -119,10 +126,12 @@ def get_engagement_metrics():
     except ValueError as e:
         return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @admin_bp.route('/metrics/appointments', methods=['GET'])
+@auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
 @swag_from("../docs/admin_metrics_appointments.yml")
 def get_appointment_metrics():
@@ -156,10 +165,12 @@ def get_appointment_metrics():
     except ValueError as e:
         return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @admin_bp.route('/metrics/revenue', methods=['GET'])
+@auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
 @swag_from("../docs/admin_metrics_revenue.yml")
 def get_revenue_metrics():
@@ -193,10 +204,143 @@ def get_revenue_metrics():
     except ValueError as e:
         return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
     except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
+
+
+@admin_bp.route('/error-logs', methods=['GET'])
+@auto_log_errors
+@role_required(['admin'], verify_with_supabase=True)
+@swag_from("../docs/admin_error_logs.yml")
+def get_error_logs():
+    """
+    Get error logs with optional filtering.
+    
+    Query Parameters:
+        - limit: Maximum number of logs to return (default: 100)
+        - severity: Filter by severity level (low, medium, high, critical)
+        - start_date: Filter logs from this date (ISO format)
+        - end_date: Filter logs until this date (ISO format)
+    """
+    try:
+        limit = int(request.args.get('limit', 100))
+        severity = request.args.get('severity')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        logs, error = ErrorLoggingService.get_error_logs(
+            limit=limit,
+            severity=severity,
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        if error:
+            return jsonify({"error": error}), 500
+        
+        return jsonify({
+            "message": "Error logs retrieved successfully",
+            "count": len(logs),
+            "logs": logs
+        }), 200
+        
+    except ValueError as e:
+        return jsonify({"error": f"Invalid parameter: {str(e)}"}), 400
+    except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
+
+
+@admin_bp.route('/audit-logs', methods=['GET'])
+@auto_log_errors
+@role_required(['admin'], verify_with_supabase=True)
+@swag_from("../docs/admin_audit_logs.yml")
+def get_audit_logs():
+    """
+    Get audit logs with optional filtering.
+    
+    Query Parameters:
+        - limit: Maximum number of logs to return (default: 100)
+        - table_name: Filter by table name
+        - record_id: Filter by record ID
+        - action: Filter by action type (INSERT, UPDATE, DELETE)
+        - changed_by: Filter by user ID who made the change
+        - start_date: Filter logs from this date (ISO format)
+        - end_date: Filter logs until this date (ISO format)
+    """
+    try:
+        limit = int(request.args.get('limit', 100))
+        table_name = request.args.get('table_name')
+        record_id = request.args.get('record_id')
+        action = request.args.get('action')
+        changed_by = request.args.get('changed_by')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        logs, error = AuditLoggingService.get_audit_logs(
+            table_name=table_name,
+            record_id=record_id,
+            action=action,
+            changed_by=changed_by,
+            limit=limit,
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        if error:
+            return jsonify({"error": error}), 500
+        
+        return jsonify({
+            "message": "Audit logs retrieved successfully",
+            "count": len(logs),
+            "logs": logs
+        }), 200
+        
+    except ValueError as e:
+        return jsonify({"error": f"Invalid parameter: {str(e)}"}), 400
+    except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
+
+
+@admin_bp.route('/platform-metrics/calculate', methods=['POST'])
+@auto_log_errors
+@role_required(['admin'], verify_with_supabase=True)
+@swag_from("../docs/admin_calculate_platform_metrics.yml")
+def calculate_platform_metrics():
+    """
+    Calculate and store platform metrics for a specific date or today.
+    
+    Body Parameters (optional):
+        - date: Date to calculate metrics for (YYYY-MM-DD, default: today)
+    """
+    try:
+        data = request.get_json() or {}
+        target_date_str = data.get('date')
+        
+        target_date = None
+        if target_date_str:
+            target_date = datetime.fromisoformat(target_date_str).date()
+        
+        metrics, error = AnalyticsService.calculate_and_store_platform_metrics(target_date)
+        
+        if error:
+            return jsonify({"error": error}), 500
+        
+        return jsonify({
+            "message": "Platform metrics calculated and stored successfully",
+            "metrics": metrics
+        }), 200
+        
+    except ValueError as e:
+        return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
+    except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @admin_bp.route('/metrics/loyalty', methods=['GET'])
+@auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
 @swag_from("../docs/admin_metrics_loyalty.yml")
 def get_loyalty_metrics():
@@ -230,10 +374,71 @@ def get_loyalty_metrics():
     except ValueError as e:
         return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
     except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
+
+
+@admin_bp.route('/daily-statistics/export/csv', methods=['GET'])
+@auto_log_errors
+@role_required(['admin'], verify_with_supabase=True)
+def export_daily_statistics_csv():
+    """
+    Export daily statistics rows as a CSV table for a date range.
+
+    Query Parameters:
+        - start_date (YYYY-MM-DD, required)
+        - end_date   (YYYY-MM-DD, required)
+    """
+    try:
+        start_date_str = request.args.get("start_date")
+        end_date_str = request.args.get("end_date")
+
+        if not start_date_str or not end_date_str:
+            return jsonify({"error": "start_date and end_date are required"}), 400
+
+        start_date = datetime.fromisoformat(start_date_str).date()
+        end_date = datetime.fromisoformat(end_date_str).date()
+
+        stats, error = AnalyticsService.get_daily_statistics(start_date, end_date)
+        if error:
+            return jsonify({"error": error}), 500
+
+        rows = stats.get("rows", []) if isinstance(stats, dict) else []
+
+        columns = [
+            {"key": "date", "label": "Date"},
+            {"key": "total_appointments", "label": "Total Appointments"},
+            {"key": "completed_appointments", "label": "Completed"},
+            {"key": "cancelled_appointments", "label": "Cancelled"},
+            {"key": "new_customers", "label": "New Customers"},
+            {"key": "returning_customers", "label": "Returning Customers"},
+            {"key": "total_revenue", "label": "Total Revenue"},
+            {"key": "average_rating", "label": "Average Rating"},
+            {"key": "loyalty_points_earned", "label": "Loyalty Points Earned"},
+            {"key": "loyalty_points_redeemed", "label": "Loyalty Points Redeemed"},
+            {"key": "created_at", "label": "Last Updated At"},
+        ]
+
+        csv_string, filename = ExportService.export_rows_to_csv(
+            rows=rows,
+            columns=columns,
+            filename_prefix="daily_statistics",
+        )
+
+        return Response(
+            csv_string,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except ValueError as e:
+        return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
+    except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @admin_bp.route('/metrics/retention', methods=['GET'])
+@auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
 @swag_from("../docs/admin_metrics_retention.yml")
 def get_retention_metrics():
@@ -267,7 +472,11 @@ def get_retention_metrics():
     except ValueError as e:
         return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
+
+
+
 
 
 @admin_bp.route('/metrics/platform', methods=['GET'])
@@ -289,10 +498,12 @@ def get_platform_metrics():
         }), 200
         
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @admin_bp.route('/metrics/daily-statistics/calculate', methods=['POST'])
+@auto_log_errors
 @swag_from("../docs/admin_calculate_daily_stats.yml")
 def calculate_daily_statistics():
     """
@@ -381,10 +592,53 @@ def calculate_daily_statistics():
     except ValueError as e:
         return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
+@admin_bp.route('/daily-statistics', methods=['GET'])
+@auto_log_errors
+@role_required(['admin'], verify_with_supabase=True)
+def get_daily_statistics():
+    """
+    Get raw daily statistics rows for a date range.
+
+    Query Parameters:
+        - start_date (YYYY-MM-DD, required)
+        - end_date   (YYYY-MM-DD, required)
+    """
+    try:
+        start_date_str = request.args.get("start_date")
+        end_date_str = request.args.get("end_date")
+
+        if not start_date_str or not end_date_str:
+            return jsonify({"error": "start_date and end_date are required"}), 400
+
+        start_date = datetime.fromisoformat(start_date_str).date()
+        end_date = datetime.fromisoformat(end_date_str).date()
+
+        stats, error = AnalyticsService.get_daily_statistics(start_date, end_date)
+        if error:
+            return jsonify({"error": error}), 500
+
+        return jsonify(
+            {
+                "message": "Daily statistics retrieved successfully",
+                "daily_statistics": stats,
+            }
+        ), 200
+    except ValueError as e:
+        return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
+    except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+
 @admin_bp.route('/metrics/<metrics_type>/export/csv', methods=['GET'])
+@auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
 @swag_from("../docs/admin_export_csv.yml")
 def export_metrics_csv(metrics_type: str):
@@ -406,7 +660,7 @@ def export_metrics_csv(metrics_type: str):
         if metrics_type == 'demographics':
             metrics, error = DemographicsService.get_demographics_aggregation()
         elif metrics_type == 'platform':
-            metrics, error = AnalyticsService.get_platform_metrics()
+            metrics, error = AnalyticsService.get_platform_metrics(use_stored=True)
         else:
             if not start_date_str or not end_date_str:
                 return jsonify({"error": "start_date and end_date are required"}), 400
@@ -444,69 +698,125 @@ def export_metrics_csv(metrics_type: str):
     except ValueError as e:
         return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
-@admin_bp.route('/metrics/<metrics_type>/export/pdf', methods=['GET'])
+
+
+
+@admin_bp.route('/error-logs/export/csv', methods=['GET'])
+@auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
-@swag_from("../docs/admin_export_pdf.yml")
-def export_metrics_pdf(metrics_type: str):
+def export_error_logs_csv():
     """
-    Export metrics to PDF format.
-    
-    Path Parameters:
-        - metrics_type: Type of metrics (engagement, appointments, revenue, loyalty, retention, demographics, platform)
+    Export error logs to CSV.
     
     Query Parameters:
-        - start_date: Start date (YYYY-MM-DD) - required for date-range metrics
-        - end_date: End date (YYYY-MM-DD) - required for date-range metrics
+        - limit: Max number of records (default: 1000)
+        - severity: Optional severity filter
+        - start_date, end_date: Optional ISO date strings to filter by created_at
     """
     try:
-        start_date_str = request.args.get('start_date')
-        end_date_str = request.args.get('end_date')
+        limit = int(request.args.get("limit", 1000))
+        severity = request.args.get("severity")
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
         
-        # Get metrics data
-        if metrics_type == 'demographics':
-            metrics, error = DemographicsService.get_demographics_aggregation()
-        elif metrics_type == 'platform':
-            metrics, error = AnalyticsService.get_platform_metrics()
-        else:
-            if not start_date_str or not end_date_str:
-                return jsonify({"error": "start_date and end_date are required"}), 400
-            
-            start_date = datetime.fromisoformat(start_date_str).date()
-            end_date = datetime.fromisoformat(end_date_str).date()
-            
-            if metrics_type == 'engagement':
-                metrics, error = AnalyticsService.get_engagement_metrics(start_date, end_date)
-            elif metrics_type == 'appointments':
-                metrics, error = AnalyticsService.get_appointment_metrics(start_date, end_date)
-            elif metrics_type == 'revenue':
-                metrics, error = AnalyticsService.get_revenue_metrics(start_date, end_date)
-            elif metrics_type == 'loyalty':
-                metrics, error = AnalyticsService.get_loyalty_metrics(start_date, end_date)
-            elif metrics_type == 'retention':
-                metrics, error = AnalyticsService.get_retention_metrics(start_date, end_date)
-            else:
-                return jsonify({"error": f"Unknown metrics type: {metrics_type}"}), 400
-        
+        logs, error = ErrorLoggingService.get_error_logs(
+            limit=limit,
+            severity=severity,
+            start_date=start_date,
+            end_date=end_date,
+        )
         if error:
             return jsonify({"error": error}), 500
         
-        # Export to PDF
-        pdf_bytes, filename = ExportService.export_to_pdf(metrics, metrics_type)
-        
-        return Response(
-            pdf_bytes,
-            mimetype='application/pdf',
-            headers={
-                'Content-Disposition': f'attachment; filename={filename}'
-            }
+        columns = [
+            {"key": "created_at", "label": "Timestamp"},
+            {"key": "severity", "label": "Severity"},
+            {"key": "error_type", "label": "Type"},
+            {"key": "error_message", "label": "Message"},
+            {"key": "endpoint", "label": "Endpoint"},
+            {"key": "user_id", "label": "User ID"},
+        ]
+        csv_string, filename = ExportService.export_rows_to_csv(
+            rows=logs,
+            columns=columns,
+            filename_prefix="error_logs",
         )
-        
-    except ValueError as e:
-        return jsonify({"error": f"Invalid date format: {str(e)}"}), 400
+        return Response(
+            csv_string,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
+@admin_bp.route('/audit-logs/export/csv', methods=['GET'])
+@auto_log_errors
+@role_required(['admin'], verify_with_supabase=True)
+def export_audit_logs_csv():
+    """
+    Export audit logs to CSV.
+    
+    Query Parameters mirror /admin/audit-logs:
+        - limit
+        - table_name
+        - record_id
+        - action
+        - changed_by
+        - start_date, end_date
+    """
+    try:
+        limit = int(request.args.get("limit", 1000))
+        table_name = request.args.get("table_name")
+        record_id = request.args.get("record_id")
+        action = request.args.get("action")
+        changed_by = request.args.get("changed_by")
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
+        
+        logs, error = AuditLoggingService.get_audit_logs(
+            limit=limit,
+            table_name=table_name,
+            record_id=record_id,
+            action=action,
+            changed_by=changed_by,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        if error:
+            return jsonify({"error": error}), 500
+        
+        # old_values/new_values are JSON; stringify for CSV
+        for row in logs or []:
+            if isinstance(row.get("old_values"), (dict, list)):
+                row["old_values"] = json.dumps(row["old_values"])
+            if isinstance(row.get("new_values"), (dict, list)):
+                row["new_values"] = json.dumps(row["new_values"])
+        
+        columns = [
+            {"key": "created_at", "label": "Timestamp"},
+            {"key": "table_name", "label": "Table"},
+            {"key": "record_id", "label": "Record ID"},
+            {"key": "action", "label": "Action"},
+            {"key": "changed_by", "label": "Changed By"},
+            {"key": "old_values", "label": "Old Values"},
+            {"key": "new_values", "label": "New Values"},
+        ]
+        csv_string, filename = ExportService.export_rows_to_csv(
+            rows=logs,
+            columns=columns,
+            filename_prefix="audit_logs",
+        )
+        return Response(
+            csv_string,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500

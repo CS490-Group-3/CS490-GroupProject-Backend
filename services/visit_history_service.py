@@ -3,6 +3,7 @@ Visit History Service for aggregating customer visit data.
 Provides comprehensive history including appointments, spend, images, and notes.
 """
 from config import supabase
+from services.error_logging_service import ErrorLoggingService
 from typing import Dict, Optional, Tuple, List
 from datetime import datetime
 
@@ -206,6 +207,7 @@ class VisitHistoryService:
             }, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Failed to get visit history: {str(e)}"
     
     @staticmethod
@@ -248,5 +250,6 @@ class VisitHistoryService:
             return history, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Failed to get salon customer history: {str(e)}"
 

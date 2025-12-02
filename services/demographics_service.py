@@ -4,6 +4,7 @@ Provides analytics and segmentation for admin dashboard.
 """
 from config import supabase
 from typing import Dict, Optional, Tuple, List
+from services.error_logging_service import ErrorLoggingService
 import json
 
 
@@ -59,30 +60,41 @@ class DemographicsService:
                 city = user.get('city')
                 state = user.get('state')
                 
-                if city:
-                    demographics['by_location']['cities'][city] = \
-                        demographics['by_location']['cities'].get(city, 0) + 1
+                if city and city is not None:
+                    city_str = str(city).strip()
+                    if city_str:
+                        demographics['by_location']['cities'][city_str] = \
+                            demographics['by_location']['cities'].get(city_str, 0) + 1
                 
-                if state:
-                    demographics['by_location']['states'][state] = \
-                        demographics['by_location']['states'].get(state, 0) + 1
+                if state and state is not None:
+                    state_str = str(state).strip()
+                    if state_str:
+                        demographics['by_location']['states'][state_str] = \
+                            demographics['by_location']['states'].get(state_str, 0) + 1
                 
                 # Age bracket aggregation
                 age_bracket = user.get('age_bracket')
-                if age_bracket:
-                    demographics['by_age_bracket'][age_bracket] = \
-                        demographics['by_age_bracket'].get(age_bracket, 0) + 1
+                if age_bracket and age_bracket is not None:
+                    bracket_str = str(age_bracket).strip()
+                    if bracket_str:
+                        demographics['by_age_bracket'][bracket_str] = \
+                            demographics['by_age_bracket'].get(bracket_str, 0) + 1
                 
                 # Gender aggregation
                 gender = user.get('gender')
-                if gender:
-                    demographics['by_gender'][gender] = \
-                        demographics['by_gender'].get(gender, 0) + 1
+                if gender and gender is not None:
+                    gender_str = str(gender).strip()
+                    if gender_str:
+                        demographics['by_gender'][gender_str] = \
+                            demographics['by_gender'].get(gender_str, 0) + 1
                 
                 # Role aggregation
                 role = user.get('role', 'customer')
-                demographics['by_role'][role] = \
-                    demographics['by_role'].get(role, 0) + 1
+                if role and role is not None:
+                    role_str = str(role).strip()
+                    if role_str:
+                        demographics['by_role'][role_str] = \
+                            demographics['by_role'].get(role_str, 0) + 1
                 
                 # Preferred services aggregation
                 preferred_services = user.get('preferred_services')
@@ -99,75 +111,68 @@ class DemographicsService:
                         services_list = []
                     
                     for service in services_list:
-                        if service:
-                            demographics['preferred_services'][service] = \
-                                demographics['preferred_services'].get(service, 0) + 1
+                        if service and service is not None:
+                            service_str = str(service).strip()
+                            if service_str:
+                                demographics['preferred_services'][service_str] = \
+                                    demographics['preferred_services'].get(service_str, 0) + 1
             
             # Convert to distribution lists for easier frontend consumption
+            # All keys should now be strings, but add extra safety checks
             demographics['location_distribution'] = [
                 {'city': city, 'count': count}
                 for city, count in sorted(
-                    demographics['by_location']['cities'].items(),
-                    key=lambda x: x[1],
-                    reverse=True
+                    [(k, v) for k, v in demographics['by_location']['cities'].items() if k is not None and str(k).strip()],
+                    key=lambda x: (0, -x[1]) if x[0] is None else (1, -x[1])  # Sort by count, None keys last
                 )
             ]
             
             demographics['state_distribution'] = [
                 {'state': state, 'count': count}
                 for state, count in sorted(
-                    demographics['by_location']['states'].items(),
-                    key=lambda x: x[1],
-                    reverse=True
+                    [(k, v) for k, v in demographics['by_location']['states'].items() if k is not None and str(k).strip()],
+                    key=lambda x: (0, -x[1]) if x[0] is None else (1, -x[1])  # Sort by count, None keys last
                 )
             ]
             
             demographics['age_distribution'] = [
                 {'age_bracket': bracket, 'count': count}
                 for bracket, count in sorted(
-                    demographics['by_age_bracket'].items(),
-                    key=lambda x: x[0] if x[0] else ''
+                    [(k, v) for k, v in demographics['by_age_bracket'].items() if k is not None and str(k).strip()],
+                    key=lambda x: (str(x[0]) if x[0] is not None else 'zzz', x[1])  # Sort by bracket name
                 )
             ]
             
             demographics['gender_distribution'] = [
                 {'gender': gender, 'count': count}
                 for gender, count in sorted(
-                    demographics['by_gender'].items()
+                    [(k, v) for k, v in demographics['by_gender'].items() if k is not None and str(k).strip()],
+                    key=lambda x: (str(x[0]) if x[0] is not None else 'zzz', x[1])  # Sort by gender name
                 )
             ]
             
             demographics['role_distribution'] = [
                 {'role': role, 'count': count}
                 for role, count in sorted(
-                    demographics['by_role'].items()
+                    [(k, v) for k, v in demographics['by_role'].items() if k is not None and str(k).strip()],
+                    key=lambda x: (str(x[0]) if x[0] is not None else 'zzz', x[1])  # Sort by role name
                 )
             ]
             
             demographics['service_distribution'] = [
                 {'service': service, 'count': count}
                 for service, count in sorted(
-                    demographics['preferred_services'].items(),
-                    key=lambda x: x[1],
-                    reverse=True
+                    [(k, v) for k, v in demographics['preferred_services'].items() if k is not None and str(k).strip()],
+                    key=lambda x: (0, -x[1]) if x[0] is None else (1, -x[1])  # Sort by count, None keys last
                 )
             ]
             
-            # Top N lists
-            demographics['top_cities'] = [
-                {'city': city, 'count': count}
-                for city, count in demographics['location_distribution'][:10]
-            ]
+            # Top N lists - distribution lists are already dictionaries, so just slice them
+            demographics['top_cities'] = demographics['location_distribution'][:10]
             
-            demographics['top_states'] = [
-                {'state': state, 'count': count}
-                for state, count in demographics['state_distribution'][:10]
-            ]
+            demographics['top_states'] = demographics['state_distribution'][:10]
             
-            demographics['top_services'] = [
-                {'service': service, 'count': count}
-                for service, count in demographics['service_distribution'][:10]
-            ]
+            demographics['top_services'] = demographics['service_distribution'][:10]
             
             # Calculate percentages
             total_with_demographics = sum(demographics['by_age_bracket'].values())
@@ -187,6 +192,7 @@ class DemographicsService:
             return demographics, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Failed to aggregate demographics: {str(e)}"
     
     @staticmethod
@@ -246,6 +252,7 @@ class DemographicsService:
             return response.data if response.data else [], None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Failed to get segmented demographics: {str(e)}"
 
 

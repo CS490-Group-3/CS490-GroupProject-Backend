@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, g
 from werkzeug.exceptions import BadRequest, Forbidden, NotFound
 from middleware.auth import login_required
+from middleware.error_logging import auto_log_errors, log_route_error
 from flasgger.utils import swag_from
 from services.review_service import ReviewService
 
@@ -8,6 +9,7 @@ reviews_bp = Blueprint("reviews", __name__, url_prefix="/api/reviews")
 
 
 @reviews_bp.post("/")
+@auto_log_errors
 @login_required()
 @swag_from("../docs/reviews_create.yml")
 def create_review():
@@ -31,16 +33,21 @@ def create_review():
 
         return jsonify(result), 201
     except NotFound as e:
+        log_route_error(e, severity='low')
         return jsonify({"error": str(e)}), 404
     except Forbidden as e:
+        log_route_error(e, severity='medium')
         return jsonify({"error": str(e)}), 403
     except BadRequest as e:
+        log_route_error(e, severity='medium')
         return jsonify({"error": str(e)}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @reviews_bp.get("/<review_id>")
+@auto_log_errors
 @login_required()
 @swag_from("../docs/reviews_get_single.yml")
 def get_review(review_id):
@@ -52,6 +59,7 @@ def get_review(review_id):
 
 
 @reviews_bp.patch("/<review_id>")
+@auto_log_errors
 @login_required()
 @swag_from("../docs/reviews_update.yml")
 def update_review(review_id):
@@ -73,16 +81,21 @@ def update_review(review_id):
 
         return jsonify(updated), 200
     except NotFound as e:
+        log_route_error(e, severity='low')
         return jsonify({"error": str(e)}), 404
     except Forbidden as e:
+        log_route_error(e, severity='medium')
         return jsonify({"error": str(e)}), 403
     except BadRequest as e:
+        log_route_error(e, severity='medium')
         return jsonify({"error": str(e)}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @reviews_bp.delete("/<review_id>")
+@auto_log_errors
 @login_required()
 @swag_from("../docs/reviews_delete.yml")
 def delete_review(review_id):
@@ -91,6 +104,7 @@ def delete_review(review_id):
 
 
 @reviews_bp.get("/salon/<salon_id>")
+@auto_log_errors
 @login_required()
 @swag_from("../docs/reviews_list_salon.yml")
 def get_salon_reviews(salon_id):

@@ -68,7 +68,14 @@ responses:
 
   404:
     description: Salon not found
-
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Salon not found" }
   500:
     description: Internal server error
+    schema:
+      type: object
+      properties:
+        error: { type: string, example: "Internal server error" }
 

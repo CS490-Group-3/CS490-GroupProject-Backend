@@ -10,6 +10,7 @@ from services.auth_service import AuthService
 from services.notification_service import NotificationService
 from middleware import login_required, role_required, get_current_user, get_owned_salons
 from middleware.notify import notify
+from middleware.error_logging import auto_log_errors, log_route_error, log_service_error
 
 appointments_bp = Blueprint('appointments', __name__, url_prefix='/api/appointments')
 appointments_bp.strict_slashes = False
@@ -18,6 +19,7 @@ appointments_bp.strict_slashes = False
 
 # availability helper
 @appointments_bp.route("/availability", methods=["GET"])
+@auto_log_errors
 @login_required()
 @role_required(['customer', 'admin', 'salon_owner', 'barber'])
 def get_availability_slots():
@@ -29,12 +31,14 @@ def get_availability_slots():
         return jsonify({"error": "salon_id, barber_id, service_id, and date are required"}), 400
     slots, error = AppointmentService.get_available_slots(salon_id, barber_id, service_id, date_str)
     if error:
+        log_service_error(error)
         return jsonify({"error": error}), 400
     return jsonify({"slots": slots}), 200
 
 # list apptmts: GET / 
 @appointments_bp.route('', methods=['GET'])
 @appointments_bp.route('/', methods=['GET'])
+@auto_log_errors
 @login_required()
 @role_required(['customer', 'admin', 'salon_owner', 'barber'])
 @swag_from("../docs/list_appointments.yml")
@@ -63,6 +67,7 @@ def list_appointments():
         status_param = request.args.get("status")
         status = status_param.split(",") if status_param else None
         page = int(request.args.get("page", 1))
+        # Sensible default page size; callers that need more should pass ?limit=
         limit = int(request.args.get("limit", 20))
 
         salon_id = request.args.get("salon_id")
@@ -101,6 +106,7 @@ def list_appointments():
             return jsonify({"error": "Unauthorized role"}), 403
         
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         
         return jsonify({
@@ -113,11 +119,13 @@ def list_appointments():
         }), 200
         
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 # create: POST /
 @appointments_bp.route("", methods=["POST"])
 @appointments_bp.route("/", methods=["POST"])
+@auto_log_errors
 @login_required()
 @role_required(["customer", "salon_owner", "barber", "admin"])
 @notify(
@@ -145,16 +153,19 @@ def create_appointment():
         req = AppointmentCreateRequest(**payload)
         created, error = AppointmentService.create_appointment(req.model_dump(), user=user)
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         return jsonify(created), 201
     except ValidationError as e:
         return jsonify({"error": "Validation failed", "details": e.errors()}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 # update: PATCH /
 @appointments_bp.route('', methods=['PATCH'])
 @appointments_bp.route('/', methods=['PATCH'])
+@auto_log_errors
 @login_required()
 @role_required(['customer', 'admin', 'salon_owner', 'barber'])
 @notify(
@@ -186,8 +197,10 @@ def update_appointment():
         result, error = AppointmentService.update_appointment(appointment_id, req.model_dump(exclude_unset=True), user=user)
         
         if error == "Forbidden":
+            log_service_error(error, severity='medium')
             return jsonify({"error": error}), 403
         elif error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
     
         return jsonify({
@@ -198,10 +211,12 @@ def update_appointment():
     except ValidationError as e:
         return jsonify({"error": e.errors()}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 # PATCH /<appointment_id>/cancel
 @appointments_bp.route("/<appointment_id>/cancel", methods=["PATCH"])
+@auto_log_errors
 @login_required()
 @role_required(["customer", "salon_owner", "barber", "admin"])
 @swag_from("../docs/cancel_appointment.yml")
@@ -222,15 +237,19 @@ def cancel_appointment(appointment_id):
         reason = (request.get_json() or {}).get("reason")
         data, error = AppointmentService.cancel_appointment(appointment_id, reason=reason, user=user)
         if error == "Forbidden":
+            log_service_error(error, severity='medium')
             return jsonify({"error": error}), 403
         elif error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         return jsonify(data), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 # PATCH /<appointment_id>/reschedule
 @appointments_bp.route("/<appointment_id>/reschedule", methods=["PATCH"])
+@auto_log_errors
 @login_required()
 @role_required(["customer", "salon_owner", "barber", "admin"])
 @swag_from("../docs/reschedule_appointment.yml")
@@ -253,16 +272,20 @@ def reschedule_appointment(appointment_id):
             appointment_id, salon_id, barber_id, new_start_at, new_end_at, user=user
         )
         if error == "Forbidden":
+            log_service_error(error, severity='medium')
             return jsonify({"error": error}), 403
         elif error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         return jsonify(updated), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 # PATCH /<appointment_id>/action
 # pass action: "confirm" or "deny" in the body
 @appointments_bp.route("/<appointment_id>/action", methods=["PATCH"])
+@auto_log_errors
 @login_required()
 @role_required(["salon_owner", "barber", "admin"])
 @notify(
@@ -284,15 +307,19 @@ def confirm_or_deny(appointment_id):
         reason = body.get("reason")
         updated, error = AppointmentService.confirm_or_deny(appointment_id, action, user=user, reason=reason)
         if error == "Forbidden":
+            log_service_error(error, severity='medium')
             return jsonify({"error": error}), 403
         elif error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         return jsonify(updated), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 # mark appointment as completed or no show: PATCH /<appointment_id>/complete
 @appointments_bp.route("/<appointment_id>/complete", methods=["PATCH"])
+@auto_log_errors
 @login_required()
 @role_required(["barber", "salon_owner", "admin"])
 @swag_from("../docs/mark_completed.yml")
@@ -303,13 +330,16 @@ def mark_completed(appointment_id):
     status = body.get("status", "completed")  # default
     data, error = AppointmentService.mark_completed_or_no_show(appointment_id, status, user=user)
     if error == "Forbidden":
+        log_service_error(error, severity='medium')
         return jsonify({"error": error}), 403
     elif error:
+        log_service_error(error)
         return jsonify({"error": error}), 400
     return jsonify(data), 200
 
 #POST /<appointment_id>/running-late
 @appointments_bp.post("/<appointment_id>/running-late")
+@auto_log_errors
 @login_required()
 @role_required(["barber"])   
 @swag_from("../docs/appointment_running_late.yml")
@@ -326,6 +356,7 @@ def mark_running_late(appointment_id):
 
 #GET /<appointment_id>
 @appointments_bp.route("/<appointment_id>", methods=["GET"])
+@auto_log_errors
 @login_required()
 @role_required(["customer", "salon_owner", "barber", "admin"])
 @swag_from("../docs/get_appointment.yml")
@@ -338,11 +369,14 @@ def get_appointment(appointment_id):
         row, error = AppointmentService.get_by_id(appointment_id, user=user)
 
         if error == "Forbidden":
+            log_service_error(error, severity='medium')
             return jsonify({"error": error}), 403
         elif error:
+            log_service_error(error)
             return jsonify({"error": error}), 404
         return jsonify(row), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 

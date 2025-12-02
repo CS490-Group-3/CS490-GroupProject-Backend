@@ -77,58 +77,74 @@ class ExportService:
             Tuple of (csv_string, filename)
         """
         filename = f"{metrics_type}_metrics_{datetime.now().strftime('%Y-%m-%d')}.csv"
+
+        # If we have a proper daily_breakdown table, export JUST that as a clean CSV
+        daily = data.get("daily_breakdown")
+        if isinstance(daily, list) and daily and isinstance(daily[0], dict):
+            output = io.StringIO()
+            writer = csv.writer(output)
+            headers = list(daily[0].keys())
+            writer.writerow(headers)
+            for row in daily:
+                writer.writerow([row.get(h, "") for h in headers])
+            csv_string = output.getvalue()
+            output.close()
+            return csv_string, filename
+
+        # Fallback: flatten the metrics dict into Metric,Value rows
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Metric", "Value"])
+
+        def flatten(prefix: str, obj: Any):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    new_prefix = f"{prefix}.{k}" if prefix else k
+                    flatten(new_prefix, v)
+            elif isinstance(obj, list):
+                # Summarise lists by length; detailed structures can be seen in UI
+                writer.writerow([prefix, f"List ({len(obj)} items)"])
+            else:
+                writer.writerow([prefix, obj])
+
+        flatten("", {k: v for k, v in data.items() if k != "daily_breakdown"})
+
+        csv_string = output.getvalue()
+        output.close()
+        return csv_string, filename
+    
+    @staticmethod
+    def export_rows_to_csv(
+        rows: List[Dict[str, Any]],
+        columns: List[Dict[str, str]],
+        filename_prefix: str = "report"
+    ) -> tuple:
+        """
+        Export a list of row dicts to CSV using explicit column configuration.
+        
+        Args:
+            rows: List of dictionaries representing records
+            columns: Ordered list of column configs: {'key': 'field_name', 'label': 'Column Header'}
+            filename_prefix: Prefix for generated filename
+        
+        Returns:
+            Tuple of (csv_string, filename)
+        """
+        filename = f"{filename_prefix}_{datetime.now().strftime('%Y-%m-%d')}.csv"
         output = io.StringIO()
         writer = csv.writer(output)
         
-        # Write title
-        writer.writerow([f"{metrics_type.upper()} METRICS REPORT"])
-        writer.writerow([f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
-        writer.writerow([])
+        # Headers
+        headers = [col.get("label") or col.get("key") for col in columns]
+        keys = [col.get("key") for col in columns]
+        writer.writerow(headers)
         
-        # Write period if available
-        if 'period' in data:
-            period = data['period']
-            writer.writerow(['Period'])
-            writer.writerow(['Start Date', period.get('start_date', '')])
-            writer.writerow(['End Date', period.get('end_date', '')])
-            writer.writerow([])
-        
-        # Write summary metrics
-        if 'summary' in data:
-            writer.writerow(['SUMMARY'])
-            summary = data['summary']
-            for key, value in summary.items():
-                writer.writerow([key.replace('_', ' ').title(), value])
-            writer.writerow([])
-        
-        # Write daily breakdown if available
-        if 'daily_breakdown' in data and data['daily_breakdown']:
-            writer.writerow(['DAILY BREAKDOWN'])
-            daily = data['daily_breakdown']
-            if daily and isinstance(daily[0], dict):
-                headers = list(daily[0].keys())
-                writer.writerow(headers)
-                for day in daily:
-                    writer.writerow([day.get(h, '') for h in headers])
-        
-        # Write other sections
-        for key, value in data.items():
-            if key not in ['period', 'summary', 'daily_breakdown']:
-                writer.writerow([])
-                writer.writerow([key.replace('_', ' ').upper()])
-                if isinstance(value, dict):
-                    for k, v in value.items():
-                        writer.writerow([k.replace('_', ' ').title(), v])
-                elif isinstance(value, list):
-                    if value and isinstance(value[0], dict):
-                        headers = list(value[0].keys())
-                        writer.writerow(headers)
-                        for item in value:
-                            writer.writerow([item.get(h, '') for h in headers])
+        # Rows
+        for row in rows or []:
+            writer.writerow([row.get(key, "") for key in keys])
         
         csv_string = output.getvalue()
         output.close()
-        
         return csv_string, filename
     
     @staticmethod

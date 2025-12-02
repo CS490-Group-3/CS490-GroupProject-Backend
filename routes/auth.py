@@ -11,12 +11,14 @@ from models.user import (
 )
 from services.auth_service import AuthService
 from middleware import login_required, role_required, get_current_user
+from middleware.error_logging import auto_log_errors, log_route_error, log_service_error
 from flasgger.utils import swag_from
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
 
 @auth_bp.route('/signup', methods=['POST'])
+@auto_log_errors
 @swag_from("../docs/auth_signup.yml")
 def signup():
     """
@@ -38,6 +40,7 @@ def signup():
         )
         
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         
         return jsonify({
@@ -48,10 +51,12 @@ def signup():
     except ValidationError as e:
         return jsonify({"error": "Validation failed", "details": e.errors()}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @auth_bp.route('/login', methods=['POST'])
+@auto_log_errors
 @swag_from("../docs/auth_login.yml")
 def login():
     """
@@ -83,6 +88,7 @@ def login():
 
 
 @auth_bp.route('/logout', methods=['POST'])
+@auto_log_errors
 @swag_from("../docs/auth_logout.yml")
 def logout():
     """
@@ -110,6 +116,7 @@ def logout():
 
 
 @auth_bp.route('/refresh', methods=['POST'])
+@auto_log_errors
 @swag_from("../docs/auth_refresh.yml")
 def refresh_token():
     """
@@ -189,10 +196,12 @@ def get_current_user_route():
         
         return jsonify({"user": user_data}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @auth_bp.route('/profile', methods=['PUT'])
+@auto_log_errors
 @swag_from("../docs/auth_profile_update.yml")
 @login_required()
 def update_profile():
@@ -221,6 +230,7 @@ def update_profile():
         )
         
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         
         return jsonify({
@@ -231,6 +241,7 @@ def update_profile():
     except ValidationError as e:
         return jsonify({"error": "Validation failed", "details": e.errors()}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -255,6 +266,7 @@ def update_user_role(user_id: str):
         )
         
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         
         return jsonify({"message": "Role updated successfully"}), 200
@@ -262,10 +274,12 @@ def update_user_role(user_id: str):
     except ValidationError as e:
         return jsonify({"error": "Validation failed", "details": e.errors()}), 400
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
 @auth_bp.route('/password-reset/request', methods=['POST'])
+@auto_log_errors
 @swag_from("../docs/auth_password_reset_request.yml")
 def request_password_reset():
     """
@@ -290,6 +304,7 @@ def request_password_reset():
 
 
 @auth_bp.route('/password-reset/confirm', methods=['POST'])
+@auto_log_errors
 @swag_from("../docs/auth_password_reset_confirm.yml")
 def reset_password_confirm():
     """
@@ -319,6 +334,7 @@ def reset_password_confirm():
         success, error = AuthService.reset_password_with_token(access_token, new_password)
         
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         
         return jsonify({
@@ -330,6 +346,7 @@ def reset_password_confirm():
 
 
 @auth_bp.route('/password/change', methods=['PUT'])
+@auto_log_errors
 @swag_from("../docs/auth_password_change.yml")
 @login_required()
 def change_password():
@@ -359,6 +376,7 @@ def change_password():
         success, error = AuthService.update_password(token, new_password)
         
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         
         return jsonify({
@@ -366,5 +384,6 @@ def change_password():
         }), 200
         
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 

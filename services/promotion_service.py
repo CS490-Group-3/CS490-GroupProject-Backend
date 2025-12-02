@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 from config import supabase
 from services.notification_service import NotificationService
+from services.audit_logging_service import AuditLoggingService
 
 class PromotionService:
     @staticmethod
@@ -35,6 +36,15 @@ class PromotionService:
 
         # --- Insert offer (service handles the DB, not route)
         supabase.table("promotional_offers").insert(offer_record).execute()
+        
+        # Log audit
+        AuditLoggingService.log_audit(
+            table_name='promotional_offers',
+            record_id=offer_id,
+            action='INSERT',
+            new_values=offer_record,
+            changed_by=None  # Could get salon owner from context if needed
+        )
 
         # --- Trigger notifications ---
         target_audience = data.get("target_audience", "existing_customers")

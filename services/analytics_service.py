@@ -6,6 +6,7 @@ from config import supabase
 from typing import Dict, Optional, Tuple, List
 from datetime import datetime, timedelta, date
 from decimal import Decimal
+from services.error_logging_service import ErrorLoggingService
 import json
 
 
@@ -77,6 +78,7 @@ class AnalyticsService:
                 return stats, None
                 
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Failed to calculate daily statistics: {str(e)}"
     
     @staticmethod
@@ -89,8 +91,9 @@ class AnalyticsService:
             response = supabase.table('user_details')\
                 .select('id', count='exact')\
                 .eq('role', 'customer')\
-                .gte('created_at', start)\
-                .lt('created_at', end)\
+                .not_.is_('profile_created_at', 'null')\
+                .gte('profile_created_at', start)\
+                .lt('profile_created_at', end)\
                 .execute()
             
             return response.count if hasattr(response, 'count') else len(response.data or [])
@@ -296,6 +299,21 @@ class AnalyticsService:
             
             # Calculate aggregates
             total_new_customers = sum(d.get('new_customers', 0) for d in daily_data)
+            
+            # If no daily stats data, fallback to counting customers registered in the date range
+            if not daily_data or total_new_customers == 0:
+                try:
+                    new_customers_response = supabase.table('user_details')\
+                        .select('id', count='exact')\
+                        .eq('role', 'customer')\
+                        .not_.is_('profile_created_at', 'null')\
+                        .gte('profile_created_at', start_str)\
+                        .lte('profile_created_at', end_str)\
+                        .execute()
+                    total_new_customers = new_customers_response.count if hasattr(new_customers_response, 'count') else len(new_customers_response.data or [])
+                except Exception:
+                    total_new_customers = 0
+            
             total_appointments = sum(d.get('total_appointments', 0) for d in daily_data)
             total_completed = sum(d.get('completed_appointments', 0) for d in daily_data)
             total_revenue = sum(float(d.get('total_revenue', 0)) for d in daily_data)
@@ -314,7 +332,8 @@ class AnalyticsService:
             total_customers_response = supabase.table('user_details')\
                 .select('id', count='exact')\
                 .eq('role', 'customer')\
-                .lte('created_at', end_str)\
+                .not_.is_('profile_created_at', 'null')\
+                .lte('profile_created_at', end_str)\
                 .execute()
             
             total_customers = total_customers_response.count if hasattr(total_customers_response, 'count') else len(total_customers_response.data or [])
@@ -342,6 +361,7 @@ class AnalyticsService:
             }, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Failed to get engagement metrics: {str(e)}"
     
     @staticmethod
@@ -393,6 +413,42 @@ class AnalyticsService:
                         except (ValueError, TypeError):
                             pass
             
+            # Calculate peak hours (group by hour of day)
+            peak_hours = {}
+            day_of_week_trends = {}
+            for apt in apts:
+                start_at = apt.get('start_at')
+                if start_at:
+                    try:
+                        apt_datetime = datetime.fromisoformat(start_at.replace('Z', '+00:00'))
+                        hour = apt_datetime.hour
+                        day_of_week = apt_datetime.strftime('%A')  # Monday, Tuesday, etc.
+                        
+                        # Count by hour
+                        peak_hours[hour] = peak_hours.get(hour, 0) + 1
+                        
+                        # Count by day of week
+                        day_of_week_trends[day_of_week] = day_of_week_trends.get(day_of_week, 0) + 1
+                    except (ValueError, AttributeError, TypeError):
+                        pass
+            
+            # Convert peak hours to sorted list format
+            peak_hours_list = [
+                {'hour': hour, 'count': count}
+                for hour, count in sorted(peak_hours.items())
+            ]
+            
+            # Find peak hour
+            peak_hour = max(peak_hours.items(), key=lambda x: x[1])[0] if peak_hours else None
+            peak_hour_count = peak_hours.get(peak_hour, 0) if peak_hour is not None else 0
+            
+            # Convert day of week trends to list
+            day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            day_of_week_list = [
+                {'day': day, 'count': day_of_week_trends.get(day, 0)}
+                for day in day_order
+            ]
+            
             return {
                 'period': {
                     'start_date': start_date.isoformat(),
@@ -402,10 +458,15 @@ class AnalyticsService:
                 'by_status': by_status,
                 'completion_rate': round(completion_rate, 2),
                 'cancellation_rate': round(cancellation_rate, 2),
-                'revenue': round(revenue, 2)
+                'revenue': round(revenue, 2),
+                'peak_hours': peak_hours_list,
+                'peak_hour': peak_hour,
+                'peak_hour_count': peak_hour_count,
+                'day_of_week_trends': day_of_week_list
             }, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Failed to get appointment metrics: {str(e)}"
     
     @staticmethod
@@ -478,6 +539,7 @@ class AnalyticsService:
             }, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Failed to get revenue metrics: {str(e)}"
     
     @staticmethod
@@ -535,6 +597,7 @@ class AnalyticsService:
             }, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Failed to get loyalty metrics: {str(e)}"
     
     @staticmethod
@@ -552,8 +615,9 @@ class AnalyticsService:
         try:
             # Get all customers
             all_customers = supabase.table('user_details')\
-                .select('id, created_at')\
+                .select('id, profile_created_at')\
                 .eq('role', 'customer')\
+                .not_.is_('profile_created_at', 'null')\
                 .execute()
             
             customer_ids = [c.get('id') for c in (all_customers.data or []) if c.get('id')]
@@ -587,8 +651,9 @@ class AnalyticsService:
             new_customers_response = supabase.table('user_details')\
                 .select('id')\
                 .eq('role', 'customer')\
-                .gte('created_at', start_str)\
-                .lte('created_at', end_str)\
+                .not_.is_('profile_created_at', 'null')\
+                .gte('profile_created_at', start_str)\
+                .lte('profile_created_at', end_str)\
                 .execute()
             
             new_customer_ids = set(c.get('id') for c in (new_customers_response.data or []) if c.get('id'))
@@ -606,6 +671,25 @@ class AnalyticsService:
             repeat_customers = len([cid for cid, count in customer_appointment_counts.items() if count >= 2])
             retention_rate = (repeat_customers / len(customer_ids) * 100) if customer_ids else 0
             
+            # Calculate churn rate (customers who had appointments before but not in this period)
+            churn_rate = 0.0
+            if customer_ids:
+                # Get customers who had appointments before this period but not during
+                customers_with_prev_appts = set()
+                try:
+                    prev_appts = supabase.table('appointments')\
+                        .select('customer_id')\
+                        .in_('customer_id', customer_ids)\
+                        .lt('start_at', start_str)\
+                        .execute()
+                    customers_with_prev_appts = set(apt.get('customer_id') for apt in (prev_appts.data or []) if apt.get('customer_id'))
+                    
+                    # Churn = customers with previous appointments but no appointments in this period
+                    churned = customers_with_prev_appts - active_customer_ids
+                    churn_rate = (len(churned) / len(customers_with_prev_appts) * 100) if customers_with_prev_appts else 0
+                except Exception:
+                    pass
+            
             return {
                 'period': {
                     'start_date': start_str,
@@ -616,70 +700,381 @@ class AnalyticsService:
                 'new_customers': len(new_customer_ids),
                 'returning_customers': len(returning_customers),
                 'repeat_customers': repeat_customers,
-                'retention_rate': round(retention_rate, 2)
+                'retention_rate': round(retention_rate, 2),
+                'churn_rate': round(churn_rate, 2)
             }, None
             
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Failed to get retention metrics: {str(e)}"
+
+    @staticmethod
+    def get_daily_statistics(start_date: date, end_date: date) -> Tuple[Dict, Optional[str]]:
+        """
+        Get raw daily statistics rows from daily_statistics table for a date range.
+        Returns platform-wide rows (salon_id IS NULL) ordered by date ascending.
+        """
+        try:
+            start_str = start_date.isoformat()
+            end_str = end_date.isoformat()
+
+            stats = (
+                supabase.table("daily_statistics")
+                .select(
+                    "date, total_appointments, completed_appointments, cancelled_appointments, "
+                    "total_revenue, new_customers, returning_customers, average_rating, "
+                    "loyalty_points_earned, loyalty_points_redeemed, created_at"
+                )
+                .gte("date", start_str)
+                .lte("date", end_str)
+                .is_("salon_id", "null")
+                .order("date", desc=False)
+                .execute()
+            )
+
+            rows = stats.data or []
+
+            return {
+                "period": {
+                    "start_date": start_str,
+                    "end_date": end_str,
+                },
+                "rows": rows,
+            }, None
+        except Exception as e:
+            ErrorLoggingService.log_exception(e, severity="high")
+            return None, f"Failed to get daily statistics: {str(e)}"
     
     @staticmethod
-    def get_platform_metrics() -> Tuple[Dict, Optional[str]]:
+    def calculate_and_store_platform_metrics(target_date: Optional[date] = None) -> Tuple[Dict, Optional[str]]:
         """
-        Get overall platform metrics (current snapshot).
+        Calculate platform metrics and store them in the platform_metrics table.
+        If no date provided, uses today.
+        
+        Args:
+            target_date: Date to calculate metrics for (default: today)
         
         Returns:
             Tuple of (metrics_data, error_message)
         """
         try:
-            # Total users
-            users_response = supabase.table('user_details')\
-                .select('id, role', count='exact')\
-                .execute()
+            if target_date is None:
+                target_date = datetime.now().date()
             
-            total_users = users_response.count if hasattr(users_response, 'count') else len(users_response.data or [])
+            date_str = target_date.isoformat()
             
-            # Users by role
-            users_by_role = {}
-            if users_response.data:
-                for user in users_response.data:
-                    role = user.get('role', 'customer')
-                    users_by_role[role] = users_by_role.get(role, 0) + 1
+            # Calculate metrics (same logic as before)
+            # Total users - get count by role separately to avoid issues
+            try:
+                users_by_role = {}
+                total_users = 0
+                active_users = 0
+                
+                for role in ['customer', 'salon_owner', 'barber', 'admin']:
+                    try:
+                        role_response = supabase.table('user_details')\
+                            .select('id', count='exact')\
+                            .eq('role', role)\
+                            .execute()
+                        
+                        role_count = role_response.count if hasattr(role_response, 'count') else 0
+                        if role_count:
+                            users_by_role[role] = role_count
+                            total_users += role_count
+                    except Exception as role_err:
+                        print(f"[calculate_and_store_platform_metrics] Error counting {role} users: {role_err}")
+                        continue
+                
+                # Count active users (users who have logged in within last 30 days)
+                thirty_days_ago = (datetime.now() - timedelta(days=30)).isoformat()
+                try:
+                    active_response = supabase.table('user_details')\
+                        .select('id', count='exact')\
+                        .gte('last_sign_in_at', thirty_days_ago)\
+                        .execute()
+                    active_users = active_response.count if hasattr(active_response, 'count') else len(active_response.data or [])
+                except:
+                    active_users = 0
+            except Exception as e:
+                print(f"[calculate_and_store_platform_metrics] Error fetching users: {e}")
+                total_users = 0
+                active_users = 0
+                users_by_role = {}
             
             # Total salons
-            salons_response = supabase.table('salons')\
-                .select('id, status', count='exact')\
-                .execute()
-            
-            total_salons = salons_response.count if hasattr(salons_response, 'count') else len(salons_response.data or [])
-            
-            # Verified salons
-            verified_salons = len([s for s in (salons_response.data or []) if s.get('status') == 'verified'])
+            try:
+                salons_response = supabase.table('salons')\
+                    .select('id, status', count='exact')\
+                    .execute()
+                
+                total_salons = salons_response.count if hasattr(salons_response, 'count') else len(salons_response.data or [])
+                
+                # Active salons (verified salons)
+                active_salons = len([s for s in (salons_response.data or []) if s.get('status') == 'verified'])
+            except Exception as e:
+                print(f"[calculate_and_store_platform_metrics] Error fetching salons: {e}")
+                total_salons = 0
+                active_salons = 0
             
             # Total appointments
-            appointments_response = supabase.table('appointments')\
-                .select('id, status', count='exact')\
-                .execute()
-            
-            total_appointments = appointments_response.count if hasattr(appointments_response, 'count') else len(appointments_response.data or [])
-            
-            # Completed appointments
-            completed_appointments = len([a for a in (appointments_response.data or []) if a.get('status') == 'completed'])
+            try:
+                appointments_response = supabase.table('appointments')\
+                    .select('id, status', count='exact')\
+                    .execute()
+                
+                total_appointments = appointments_response.count if hasattr(appointments_response, 'count') else len(appointments_response.data or [])
+            except Exception as e:
+                print(f"[calculate_and_store_platform_metrics] Error fetching appointments: {e}")
+                total_appointments = 0
             
             # Total revenue (from all completed appointments)
-            completed_apts = supabase.table('appointments')\
-                .select('service_id, services:service_id(price)')\
-                .eq('status', 'completed')\
+            total_revenue = Decimal('0.0')
+            try:
+                completed_apts = supabase.table('appointments')\
+                    .select('service_id, services:service_id(price)')\
+                    .eq('status', 'completed')\
+                    .execute()
+                
+                if completed_apts.data:
+                    for apt in completed_apts.data:
+                        service = apt.get('services')
+                        if isinstance(service, dict) and service.get('price'):
+                            try:
+                                total_revenue += Decimal(str(service['price']))
+                            except (ValueError, TypeError):
+                                pass
+            except Exception as e:
+                print(f"[calculate_and_store_platform_metrics] Error fetching revenue: {e}")
+                total_revenue = Decimal('0.0')
+            
+            # Check if record exists for this date
+            existing = supabase.table('platform_metrics')\
+                .select('id')\
+                .eq('date', date_str)\
                 .execute()
             
+            metrics_data = {
+                'date': date_str,
+                'total_users': total_users,
+                'active_users': active_users,
+                'total_salons': total_salons,
+                'active_salons': active_salons,
+                'total_appointments': total_appointments,
+                'total_revenue': float(total_revenue)
+            }
+            
+            if existing.data:
+                # Update existing record
+                metrics_id = existing.data[0]['id']
+                response = supabase.table('platform_metrics')\
+                    .update(metrics_data)\
+                    .eq('id', metrics_id)\
+                    .execute()
+            else:
+                # Insert new record
+                response = supabase.table('platform_metrics')\
+                    .insert(metrics_data)\
+                    .execute()
+            
+            if getattr(response, 'error', None):
+                return None, f"Failed to store platform metrics: {response.error}"
+            
+            # Return formatted response
+            return {
+                'timestamp': datetime.now().isoformat(),
+                'date': date_str,
+                'users': {
+                    'total': total_users,
+                    'active': active_users,
+                    'by_role': users_by_role
+                },
+                'salons': {
+                    'total': total_salons,
+                    'active': active_salons
+                },
+                'appointments': {
+                    'total': total_appointments
+                },
+                'revenue': {
+                    'total': round(float(total_revenue), 2)
+                }
+            }, None
+            
+        except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
+            import traceback
+            traceback.print_exc()
+            return None, f"Failed to calculate and store platform metrics: {str(e)}"
+    
+    @staticmethod
+    def get_platform_metrics(use_stored: bool = True, target_date: Optional[date] = None) -> Tuple[Dict, Optional[str]]:
+        """
+        Get overall platform metrics.
+        If use_stored is True, reads from platform_metrics table (most recent or specified date).
+        Otherwise, calculates on the fly.
+        
+        Args:
+            use_stored: Whether to read from stored metrics table
+            target_date: Specific date to retrieve (default: most recent)
+        
+        Returns:
+            Tuple of (metrics_data, error_message)
+        """
+        try:
+            if use_stored:
+                # Try to get from platform_metrics table
+                try:
+                    if target_date:
+                        date_str = target_date.isoformat()
+                        response = supabase.table('platform_metrics')\
+                            .select('*')\
+                            .eq('date', date_str)\
+                            .maybe_single()\
+                            .execute()
+                    else:
+                        # Get most recent
+                        response = supabase.table('platform_metrics')\
+                            .select('*')\
+                            .order('date', desc=True)\
+                            .limit(1)\
+                            .maybe_single()\
+                            .execute()
+                    
+                    if not response:
+                        # Response is None, fall back to live calculation
+                        print("[get_platform_metrics] Response is None, calculating on the fly")
+                        return AnalyticsService._calculate_platform_metrics_live()
+                    
+                    if getattr(response, 'error', None):
+                        # Fall back to calculating
+                        print(f"[get_platform_metrics] Error reading from table: {response.error}, calculating on the fly")
+                        return AnalyticsService._calculate_platform_metrics_live()
+                    
+                    if response.data:
+                        stored = response.data
+                        # Format to match expected structure
+                        return {
+                            'timestamp': stored.get('created_at', datetime.now().isoformat()),
+                            'date': stored.get('date'),
+                            'users': {
+                                'total': stored.get('total_users', 0),
+                                'active': stored.get('active_users', 0),
+                                'by_role': {}  # Not stored in table, would need separate query
+                            },
+                            'salons': {
+                                'total': stored.get('total_salons', 0),
+                                'verified': stored.get('active_salons', 0)
+                            },
+                            'appointments': {
+                                'total': stored.get('total_appointments', 0),
+                                'completed': 0  # Not stored, would need separate query
+                            },
+                            'revenue': {
+                                'total': float(stored.get('total_revenue', 0))
+                            }
+                        }, None
+                    else:
+                        # No stored data, calculate and store
+                        print("[get_platform_metrics] No stored metrics found, calculating...")
+                        result, error = AnalyticsService.calculate_and_store_platform_metrics(target_date)
+                        if error or not result:
+                            # If calculation fails, fall back to live calculation
+                            print(f"[get_platform_metrics] Calculation failed: {error}, falling back to live calculation")
+                            return AnalyticsService._calculate_platform_metrics_live()
+                        return result, error
+                except Exception as e:
+                    # If any error occurs, fall back to live calculation
+                    print(f"[get_platform_metrics] Exception reading from table: {e}, calculating on the fly")
+                    return AnalyticsService._calculate_platform_metrics_live()
+            else:
+                # Calculate on the fly
+                return AnalyticsService._calculate_platform_metrics_live()
+            
+        except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
+            import traceback
+            traceback.print_exc()
+            return None, f"Failed to get platform metrics: {str(e)}"
+    
+    @staticmethod
+    def _calculate_platform_metrics_live() -> Tuple[Dict, Optional[str]]:
+        """
+        Calculate platform metrics on the fly (original logic).
+        """
+        try:
+            # Total users - get count by role separately to avoid issues
+            try:
+                users_by_role = {}
+                total_users = 0
+                
+                for role in ['customer', 'salon_owner', 'barber', 'admin']:
+                    try:
+                        role_response = supabase.table('user_details')\
+                            .select('id', count='exact')\
+                            .eq('role', role)\
+                            .execute()
+                        
+                        role_count = role_response.count if hasattr(role_response, 'count') else 0
+                        if role_count:
+                            users_by_role[role] = role_count
+                            total_users += role_count
+                    except Exception as role_err:
+                        print(f"[_calculate_platform_metrics_live] Error counting {role} users: {role_err}")
+                        continue
+            except Exception as e:
+                print(f"[_calculate_platform_metrics_live] Error fetching users: {e}")
+                total_users = 0
+                users_by_role = {}
+            
+            # Total salons
+            try:
+                salons_response = supabase.table('salons')\
+                    .select('id, status', count='exact')\
+                    .execute()
+                
+                total_salons = salons_response.count if hasattr(salons_response, 'count') else len(salons_response.data or [])
+                
+                # Verified salons
+                verified_salons = len([s for s in (salons_response.data or []) if s.get('status') == 'verified'])
+            except Exception as e:
+                print(f"[_calculate_platform_metrics_live] Error fetching salons: {e}")
+                total_salons = 0
+                verified_salons = 0
+            
+            # Total appointments
+            try:
+                appointments_response = supabase.table('appointments')\
+                    .select('id, status', count='exact')\
+                    .execute()
+                
+                total_appointments = appointments_response.count if hasattr(appointments_response, 'count') else len(appointments_response.data or [])
+                
+                # Completed appointments
+                completed_appointments = len([a for a in (appointments_response.data or []) if a.get('status') == 'completed'])
+            except Exception as e:
+                print(f"[_calculate_platform_metrics_live] Error fetching appointments: {e}")
+                total_appointments = 0
+                completed_appointments = 0
+            
+            # Total revenue (from all completed appointments)
             total_revenue = 0.0
-            if completed_apts.data:
-                for apt in completed_apts.data:
-                    service = apt.get('services')
-                    if isinstance(service, dict) and service.get('price'):
-                        try:
-                            total_revenue += float(service['price'])
-                        except (ValueError, TypeError):
-                            pass
+            try:
+                completed_apts = supabase.table('appointments')\
+                    .select('service_id, services:service_id(price)')\
+                    .eq('status', 'completed')\
+                    .execute()
+                
+                if completed_apts.data:
+                    for apt in completed_apts.data:
+                        service = apt.get('services')
+                        if isinstance(service, dict) and service.get('price'):
+                            try:
+                                total_revenue += float(service['price'])
+                            except (ValueError, TypeError):
+                                pass
+            except Exception as e:
+                print(f"[_calculate_platform_metrics_live] Error fetching revenue: {e}")
+                total_revenue = 0.0
             
             return {
                 'timestamp': datetime.now().isoformat(),
@@ -701,5 +1096,7 @@ class AnalyticsService:
             }, None
             
         except Exception as e:
-            return None, f"Failed to get platform metrics: {str(e)}"
+            import traceback
+            traceback.print_exc()
+            return None, f"Failed to calculate platform metrics: {str(e)}"
 

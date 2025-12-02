@@ -1,0 +1,66 @@
+---
+tags:
+  - Admin
+summary: Get error logs
+description: >
+  Retrieve error logs with optional filtering by severity, date range, and limit.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+  - in: query
+    name: limit
+    required: false
+    schema:
+      type: integer
+      default: 100
+    description: Maximum number of logs to return
+    example: 100
+  - in: query
+    name: severity
+    required: false
+    schema:
+      type: string
+      enum: [low, medium, high, critical]
+    description: Filter by severity level
+    example: "high"
+  - in: query
+    name: start_date
+    required: false
+    schema:
+      type: string
+      format: date-time
+    description: Filter logs from this date (ISO format)
+    example: "2024-01-01T00:00:00Z"
+  - in: query
+    name: end_date
+    required: false
+    schema:
+      type: string
+      format: date-time
+    description: Filter logs until this date (ISO format)
+    example: "2024-01-31T23:59:59Z"
+responses:
+  200:
+    description: Error logs retrieved successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+        count:
+          type: integer
+        logs:
+          type: array
+          items:
+            type: object
+  400:
+    description: Bad request
+  403:
+    description: Forbidden
+  500:
+    description: Internal server error
+

@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 from config import supabase
+from services.error_logging_service import ErrorLoggingService
 import json
 from flask import jsonify
 import requests
@@ -376,6 +377,7 @@ class NotificationService:
             }).eq("id", notification_id).execute()
             return {"success": True}, 200
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             print("Error updating notification read_at:", e)
             return {"error": str(e)}, 500
     """

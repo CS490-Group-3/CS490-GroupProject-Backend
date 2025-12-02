@@ -1,6 +1,8 @@
 from config import supabase
 from typing import Dict, Optional, Tuple, List
 from datetime import time, datetime, timezone
+from services.error_logging_service import ErrorLoggingService
+from services.audit_logging_service import AuditLoggingService
 
 
 class ScheduleService:
@@ -81,12 +83,23 @@ class ScheduleService:
                 response = supabase.table("barber_availability").insert(data).execute()
                 if not getattr(response, "data", None):
                     return None, f"Supabase insert failed (status {getattr(response, 'status_code', 'unknown')}): {response}"
+                
+                created_id = response.data[0]["id"]
+                # Log audit
+                AuditLoggingService.log_audit(
+                    table_name='barber_availability',
+                    record_id=created_id,
+                    action='INSERT',
+                    new_values=data,
+                    changed_by=None  # Could get from context if needed
+                )
             
                 return response.data[0], None
             # If it exists, return error
             return None, f"Availability for barber {barber_id} on day {day_of_week} already exists."
         
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
         
     @staticmethod
@@ -126,13 +139,31 @@ class ScheduleService:
                 if not ok:
                     return None, err
             
+            # Get old values for audit log
+            old_values = {
+                'day_of_week': existing.data.get('day_of_week'),
+                'start_time': existing.data.get('start_time'),
+                'end_time': existing.data.get('end_time')
+            }
+            
             response = supabase.table("barber_availability").update(update_data).eq("id", availability_id).execute()
             if not getattr(response, "data", None):
-                return None, f"Supabase insert failed (status {getattr(response, 'status_code', 'unknown')}): {response}"
+                return None, f"Supabase update failed (status {getattr(response, 'status_code', 'unknown')}): {response}"
+            
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='barber_availability',
+                record_id=availability_id,
+                action='UPDATE',
+                old_values=old_values,
+                new_values=update_data,
+                changed_by=None  # Could get from context if needed
+            )
             
             return response.data[0], None
         
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     @staticmethod
     def get_availability(
@@ -154,6 +185,7 @@ class ScheduleService:
             return response.data, None
         
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -196,6 +228,7 @@ class ScheduleService:
                 return False, f"Availability must be within salon hours ({salon_open} - {salon_close})"
             return True, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return False, str(e)
 
     # -------- unavailability / blocking -----------
@@ -223,6 +256,7 @@ class ScheduleService:
             response = query.execute()
             return response.data or [], None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -276,6 +310,7 @@ class ScheduleService:
 
             return response.data[0], None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -340,6 +375,13 @@ class ScheduleService:
             if appointments.data:
                 return None, "There are scheduled appointments in that window. Cancel/reschedule them first."
 
+            # Get old values for audit log
+            old_values = {
+                'start_datetime': existing.data.get('start_datetime'),
+                'end_datetime': existing.data.get('end_datetime'),
+                'reason': existing.data.get('reason')
+            }
+            
             update_payload = {
                 "start_datetime": start_iso,
                 "end_datetime": end_iso,
@@ -354,8 +396,20 @@ class ScheduleService:
             )
             if not getattr(response, "data", None):
                 return None, f"Supabase update failed (status {getattr(response, 'status_code', 'unknown')}): {response}"
+            
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='barber_unavailability',
+                record_id=block_id,
+                action='UPDATE',
+                old_values=old_values,
+                new_values=update_payload,
+                changed_by=None  # Could get from context if needed
+            )
+            
             return response.data[0], None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
 
     @staticmethod
@@ -376,6 +430,10 @@ class ScheduleService:
             if existing.data.get("barber_id") != barber_id:
                 return False, "Forbidden"
 
+            # Get old values for audit log before deletion
+            old_block = supabase.table("barber_unavailability").select("*").eq("id", block_id).maybe_single().execute()
+            old_values = old_block.data if old_block.data else {}
+
             response = (
                 supabase.table("barber_unavailability")
                 .delete()
@@ -384,6 +442,18 @@ class ScheduleService:
             )
             if getattr(response, "error", None):
                 return False, f"Failed to delete block: {response.error}"
+            
+            # Log audit
+            if old_values:
+                AuditLoggingService.log_audit(
+                    table_name='barber_unavailability',
+                    record_id=block_id,
+                    action='DELETE',
+                    old_values=old_values,
+                    changed_by=None  # Could get from context if needed
+                )
+            
             return True, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return False, str(e)

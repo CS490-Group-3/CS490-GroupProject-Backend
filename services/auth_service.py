@@ -5,6 +5,8 @@ Handles user signup, login, profile management.
 from config import supabase
 from typing import Dict, Optional, Tuple
 from gotrue.errors import AuthApiError
+from services.error_logging_service import ErrorLoggingService
+from services.audit_logging_service import AuditLoggingService
 import json
 
 class AuthService:
@@ -74,6 +76,7 @@ class AuthService:
                 return None, "Email already registered. Please use a different email or try logging in."
             return None, str(e)
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Unexpected error: {str(e)}"
     
     @staticmethod
@@ -123,6 +126,7 @@ class AuthService:
                 return profile
             return None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='medium')
             print("Error fetching user profile:", e)
             return None
     
@@ -169,6 +173,7 @@ class AuthService:
         except AuthApiError as e:
             return None, "Invalid email or password"
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Login failed: {str(e)}"
     
     @staticmethod
@@ -186,6 +191,7 @@ class AuthService:
             supabase.auth.sign_out()
             return True, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return False, str(e)
     
     @staticmethod
@@ -215,6 +221,7 @@ class AuthService:
         except AuthApiError as e:
             return None, "Invalid or expired refresh token"
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, f"Token refresh failed: {str(e)}"
     
     @staticmethod
@@ -250,6 +257,7 @@ class AuthService:
         except AuthApiError as e:
             return None, "Invalid or expired token"
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -313,6 +321,19 @@ class AuthService:
             if not update_data:
                 return None, "No fields to update"
             
+            # Get old values for audit log
+            old_profile = supabase.table('user_profiles')\
+                .select('*')\
+                .eq('user_id', user_id)\
+                .maybe_single()\
+                .execute()
+            
+            old_values = {}
+            if old_profile.data:
+                for key in update_data.keys():
+                    if key in old_profile.data:
+                        old_values[key] = old_profile.data[key]
+            
             # Add updated timestamp
             update_data['updated_at'] = 'now()'
             
@@ -325,11 +346,21 @@ class AuthService:
                 .execute()
             
             if response.data:
+                # Log audit
+                AuditLoggingService.log_audit(
+                    table_name='user_profiles',
+                    record_id=user_id,
+                    action='UPDATE',
+                    old_values=old_values,
+                    new_values=update_data,
+                    changed_by=user_id
+                )
                 return response.data[0], None
             else:
                 return None, "Failed to update profile"
                 
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
     @staticmethod
@@ -351,6 +382,15 @@ class AuthService:
             if not admin_profile or admin_profile.get('role') != 'admin':
                 return False, "Unauthorized: Admin role required"
             
+            # Get old role for audit log
+            old_profile = supabase.table('user_profiles')\
+                .select('role')\
+                .eq('user_id', user_id)\
+                .maybe_single()\
+                .execute()
+            
+            old_role = old_profile.data.get('role') if old_profile.data else None
+            
             # Update role
             response = supabase.table('user_profiles')\
                 .update({'role': new_role, 'updated_at': 'now()'})\
@@ -358,11 +398,21 @@ class AuthService:
                 .execute()
             
             if response.data:
+                # Log audit (critical operation)
+                AuditLoggingService.log_audit(
+                    table_name='user_profiles',
+                    record_id=user_id,
+                    action='UPDATE',
+                    old_values={'role': old_role},
+                    new_values={'role': new_role},
+                    changed_by=admin_user_id
+                )
                 return True, None
             else:
                 return False, "Failed to update role"
                 
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return False, str(e)
     
     @staticmethod
@@ -380,6 +430,7 @@ class AuthService:
             supabase.auth.reset_password_email(email)
             return True, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return False, str(e)
     
     @staticmethod
@@ -400,6 +451,7 @@ class AuthService:
             })
             return True if response else False, None
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return False, str(e)
     
     @staticmethod
@@ -426,6 +478,7 @@ class AuthService:
                 return False, "Failed to update password"
                 
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return False, str(e)
     
     @staticmethod
@@ -456,6 +509,7 @@ class AuthService:
                 return False, "Failed to reset password"
                 
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return False, str(e)
 
     @staticmethod
@@ -470,16 +524,23 @@ class AuthService:
             Tuple of (barber_id, error_message)
         """
         try:
-            response = supabase.table('barbers')\
-                .select('id')\
-                .eq('user_id', user_id)\
+            response = (
+                supabase.table('barbers')
+                .select('id,salon_id')
+                .eq('user_id', user_id)
                 .execute()
+            )
             
-            print("Barber response:", response)
-            if response.data:
-                return response.data[0]['id'], None
-            else:
+            rows = response.data or []
+            if not rows:
                 return None, "Barber not found for the given user ID"
+            
+            # Prefer the barber record that is actually attached to a salon,
+            # since appointments for a salon use that barber_id.
+            with_salon = [row for row in rows if row.get('salon_id')]
+            target = with_salon[0] if with_salon else rows[0]
+            return target.get('id'), None
                 
         except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)

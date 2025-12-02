@@ -1,11 +1,13 @@
 from flask import Blueprint, request, jsonify, g
 from middleware.auth import login_required
+from middleware.error_logging import auto_log_errors
 from flasgger.utils import swag_from
 from services.review_image_service import ReviewImageService
 from .reviews import reviews_bp
 
 
 @reviews_bp.post("/<review_id>/images")
+@auto_log_errors
 @login_required()
 @swag_from("../docs/reviews_upload_image.yml")
 def upload_review_image(review_id):
@@ -26,6 +28,7 @@ def upload_review_image(review_id):
 
 
 @reviews_bp.get("/<review_id>/images")
+@auto_log_errors
 @swag_from("../docs/reviews_list_images.yml")
 def list_review_images(review_id):
     try:
@@ -37,6 +40,7 @@ def list_review_images(review_id):
 
 
 @reviews_bp.delete("/images/<image_id>")
+@auto_log_errors
 @login_required()
 @swag_from("../docs/reviews_delete_image.yml")
 def delete_review_image(image_id):

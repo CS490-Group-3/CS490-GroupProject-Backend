@@ -1,5 +1,6 @@
 from config import supabase
 from werkzeug.exceptions import BadRequest, Forbidden, NotFound
+from services.audit_logging_service import AuditLoggingService
 
 
 class ReviewResponseService:
@@ -78,6 +79,15 @@ class ReviewResponseService:
             .insert(response)
             .execute()
         ).data[0]
+        
+        # Log audit
+        AuditLoggingService.log_audit(
+            table_name='review_responses',
+            record_id=inserted['id'],
+            action='INSERT',
+            new_values=response,
+            changed_by=user_id
+        )
 
         return inserted
 
@@ -97,7 +107,24 @@ class ReviewResponseService:
         if resp["responder_id"] != user_id:
             raise Forbidden("You can only delete your own response")
 
+        # Get old values for audit log
+        old_values = {
+            'review_id': resp.get('review_id'),
+            'salon_id': resp.get('salon_id'),
+            'response_text': resp.get('response_text'),
+            'responder_id': resp.get('responder_id')
+        }
+
         supabase.table("review_responses").delete().eq("id", response_id).execute()
+        
+        # Log audit
+        AuditLoggingService.log_audit(
+            table_name='review_responses',
+            record_id=response_id,
+            action='DELETE',
+            old_values=old_values,
+            changed_by=user_id
+        )
 
         return {"message": "Response deleted"}
 

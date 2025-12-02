@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from middleware import login_required, role_required, get_current_user
+from middleware.error_logging import auto_log_errors, log_route_error, log_service_error
 from models.services import ServiceCreateRequest, ServiceResponse
 from services.salon_service import SalonService
 from flasgger.utils import swag_from
@@ -29,9 +30,11 @@ def list_services_route():
             return jsonify({"services": names}), 200
         return jsonify({"services": rows}), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 @services_bp.route("/", methods=["POST"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 @role_required(['salon_owner'])
 def create_service():
@@ -56,12 +59,15 @@ def create_service():
             is_active=data.is_active)
         
         if error:
+            log_service_error(error)
             return jsonify({"error": error}), 400
         return jsonify({"message": "Service created successfully"}), 201
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
     
 @services_bp.route("/<service_id>", methods=["GET"], strict_slashes=False)
+@auto_log_errors
 @login_required()
 def get_service(service_id):
     """
@@ -74,6 +80,7 @@ def get_service(service_id):
         service_response = ServiceResponse(**result)
         return jsonify(service_response.model_dump()), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 @services_bp.route("/<service_id>", methods=["PATCH"], strict_slashes=False)
@@ -98,11 +105,13 @@ def update_service(service_id):
         result, error = SalonService.update_service(service_id, salon_id, user_id, updates)
         
         if error:
+            log_service_error(error, severity='medium' if "Forbidden" in error else 'high')
             status_code = 403 if "Forbidden" in error else 404
             return jsonify({"error": error}), status_code
         
         return jsonify(result), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 @services_bp.route("/<service_id>", methods=["DELETE"], strict_slashes=False)
@@ -122,9 +131,11 @@ def delete_service(service_id):
         result, error = SalonService.delete_service(service_id, salon_id, user_id)
         
         if error:
+            log_service_error(error, severity='medium' if "Forbidden" in error else 'high')
             status_code = 403 if "Forbidden" in error else 404
             return jsonify({"error": error}), status_code
         
         return jsonify(result), 200
     except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500

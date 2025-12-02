@@ -1,5 +1,6 @@
 from config import supabase
 from werkzeug.exceptions import BadRequest, Forbidden, NotFound
+from services.audit_logging_service import AuditLoggingService
 
 
 class ReviewService:
@@ -46,12 +47,24 @@ class ReviewService:
             "comment": comment,
         }
 
-        return (
+        response = (
             supabase.table("reviews")
             .insert(review)
             .execute()
-            .data[0]
         )
+        
+        created_review = response.data[0]
+        
+        # Log audit
+        AuditLoggingService.log_audit(
+            table_name='reviews',
+            record_id=created_review['id'],
+            action='INSERT',
+            new_values=review,
+            changed_by=user_id
+        )
+        
+        return created_review
 
     @staticmethod
     def get_review(review_id):
@@ -76,19 +89,39 @@ class ReviewService:
         if review["user_id"] != user_id:
             raise Forbidden("You can only edit your own reviews")
 
+        # Get old values for audit log
+        old_values = {
+            'rating': review.get('rating'),
+            'title': review.get('title'),
+            'comment': review.get('comment')
+        }
+
         update = {
             "rating": rating,
             "title": title,
             "comment": comment
         }
 
-        return (
+        response = (
             supabase.table("reviews")
             .update(update)
             .eq("id", review_id)
             .execute()
-            .data[0]
         )
+        
+        updated_review = response.data[0]
+        
+        # Log audit
+        AuditLoggingService.log_audit(
+            table_name='reviews',
+            record_id=review_id,
+            action='UPDATE',
+            old_values=old_values,
+            new_values=update,
+            changed_by=user_id
+        )
+        
+        return updated_review
 
     @staticmethod
     def delete_review(user_id, review_id):
@@ -97,7 +130,26 @@ class ReviewService:
         if review["user_id"] != user_id:
             raise Forbidden("You can only delete your own reviews")
 
+        # Get old values for audit log before deletion
+        old_values = {
+            'user_id': review.get('user_id'),
+            'appointment_id': review.get('appointment_id'),
+            'salon_id': review.get('salon_id'),
+            'rating': review.get('rating'),
+            'title': review.get('title'),
+            'comment': review.get('comment')
+        }
+
         supabase.table("reviews").delete().eq("id", review_id).execute()
+        
+        # Log audit
+        AuditLoggingService.log_audit(
+            table_name='reviews',
+            record_id=review_id,
+            action='DELETE',
+            old_values=old_values,
+            changed_by=user_id
+        )
 
         return {"message": "Review deleted successfully"}
 
