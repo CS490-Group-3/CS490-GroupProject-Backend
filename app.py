@@ -1,13 +1,14 @@
 """
 Main Flask application for the Salon Booking Platform backend.
 """
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 from config import FLASK_DEBUG
 import sys
 from flasgger import Swagger
 
 from routes import health_bp, auth_bp, appointments_bp, schedule_bp, salon_bp, upload_bp, services_bp, admin_bp, users_bp, reviews_bp, notifications_bp
+from services.error_logging_service import ErrorLoggingService
 
 
 def create_app():
@@ -42,18 +43,41 @@ def create_app():
     app.register_blueprint(notifications_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(users_bp)
-    # Error handlers
+    # Error handlers - safety net for routes without @auto_log_errors decorator
     @app.errorhandler(404)
     def not_found(error):
         """ Handle 404 errors. """
+        # Don't log 404s - they're expected for invalid URLs
         return jsonify({
             "error": "Not Found",
             "message": "The requested endpoint does not exist"
         }), 404
 
     @app.errorhandler(500)
-    def internal_error(error):
-        """ Handle 500 errors. """
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        """ Handle unhandled exceptions - safety net for routes without @auto_log_errors. """
+        # Check if error was already logged by @auto_log_errors decorator
+        if hasattr(g, 'error_logged') and g.error_logged:
+            return jsonify({
+                "error": "Internal Server Error",
+                "message": "An unexpected error occurred"
+            }), 500
+        
+        # Only log if not already logged (routes without @auto_log_errors)
+        user_id = None
+        try:
+            if hasattr(g, 'user') and g.user:
+                user_id = g.user.get('sub')
+        except:
+            pass
+        
+        ErrorLoggingService.log_exception(
+            exception=e,
+            user_id=user_id,
+            endpoint=request.path if request else None,
+            severity='high'
+        )
         return jsonify({
             "error": "Internal Server Error",
             "message": "An unexpected error occurred"
