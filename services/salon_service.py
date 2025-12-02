@@ -1,5 +1,5 @@
 from config import supabase
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timezone
 from services.upload_file import StorageService
 from services.audit_logging_service import AuditLoggingService
 from services.error_logging_service import ErrorLoggingService
@@ -529,17 +529,26 @@ class SalonService:
             return None, str(e)
 
     @staticmethod
-    def get_salon_employees(salon_id):
+    def get_salon_employees(salon_id, include_inactive=False):
         """
         Get all service providers (barbers) for a salon.
+        
+        Args:
+            salon_id: Salon ID
+            include_inactive: If True, include inactive barbers. Default False (only active barbers).
         """
         try:
-            response = (
+            query = (
                 supabase.table("barbers")
                 .select("id,user_id,bio,years_experience,is_active")
                 .eq("salon_id", salon_id)
-                .execute()
             )
+            
+            # Filter out inactive barbers by default (for public-facing views)
+            if not include_inactive:
+                query = query.eq("is_active", True)
+            
+            response = query.execute()
             rows = response.data or []
             user_ids = [row["user_id"] for row in rows if row.get("user_id")]
             profiles = {}
@@ -1355,7 +1364,7 @@ class SalonService:
             if str(barber_resp.data.get("salon_id")) != str(salon_id):
                 return None, "Barber does not belong to this salon"
             
-            # Get old values for audit log before deletion
+            # Get old values for audit log before update
             old_values = {
                 'salon_id': barber_resp.data.get('salon_id'),
                 'user_id': barber_resp.data.get('user_id'),
@@ -1364,19 +1373,29 @@ class SalonService:
                 'is_active': barber_resp.data.get('is_active')
             }
             
-            # Delete barber (this will cascade delete barber_services)
-            supabase.table("barbers").delete().eq("id", barber_id).execute()
+            # Set barber to inactive instead of deleting (for auditing purposes)
+            # This preserves appointment history and other records
+            update_response = supabase.table("barbers")\
+                .update({
+                    "is_active": False
+                })\
+                .eq("id", barber_id)\
+                .execute()
+            
+            if getattr(update_response, "error", None):
+                return None, f"Failed to deactivate barber: {update_response.error.message}"
             
             # Log audit
             AuditLoggingService.log_audit(
                 table_name='barbers',
                 record_id=barber_id,
-                action='DELETE',
+                action='UPDATE',
                 old_values=old_values,
+                new_values={'is_active': False},
                 changed_by=owner_id
             )
             
-            return {"message": "Employee removed successfully"}, None
+            return {"message": "Employee deactivated successfully"}, None
             
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')

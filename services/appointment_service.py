@@ -47,13 +47,19 @@ class AppointmentService:
     @staticmethod
     def _get_barber(barber_id: str):
         # helper method to get specific barber
+        # Also checks if barber is active
         response = (
             supabase.table("barbers")
-            .select("id,salon_id")
+            .select("id,salon_id,is_active")
             .eq("id", barber_id).single().execute()
         )
         if getattr(response, "error", None) or not response.data:
             return None, "Barber not found"
+        
+        # Check if barber is active
+        if not response.data.get("is_active", True):
+            return None, "Barber is no longer active at this salon"
+        
         return response.data, None
     
     @staticmethod
@@ -880,6 +886,20 @@ class AppointmentService:
         checks weekly availability (local wall-clock) + explicit unavailability (UTC) + existing overlaps
         \nreturns (True, None) if available; otherwise (False, reason)
         """
+        # First check if barber is active
+        barber_resp = supabase.table("barbers")\
+            .select("id,is_active")\
+            .eq("id", barber_id)\
+            .eq("salon_id", salon_id)\
+            .maybe_single()\
+            .execute()
+        
+        if getattr(barber_resp, "error", None) or not barber_resp.data:
+            return False, "Barber not found"
+        
+        if not barber_resp.data.get("is_active", True):
+            return False, "Barber is no longer active at this salon"
+        
         tz = AppointmentService._get_salon_timezone(salon_id)
 
         # find weekly availability; convert iso times to local day and time
