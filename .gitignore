@@ -54,3 +54,8 @@ htmlcov/
 
 # Other stuff
 mine/
+
+# Additional test coverage files
+.coverage.*
+coverage.xml
+.tox/
