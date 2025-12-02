@@ -7,7 +7,7 @@ from config import FLASK_DEBUG
 import sys
 from flasgger import Swagger
 
-from routes import health_bp, auth_bp, appointments_bp, schedule_bp, salon_bp, upload_bp, services_bp, admin_bp, users_bp, reviews_bp, notifications_bp, products_bp, order_bp
+from routes import health_bp, auth_bp, appointments_bp, schedule_bp, salon_bp, upload_bp, services_bp, admin_bp, users_bp, reviews_bp, notifications_bp, products_bp, order_bp, payments_bp, payment_methods_bp, loyalty_bp, owner_bp
 from services.error_logging_service import ErrorLoggingService
 
 def create_app():
@@ -44,6 +44,10 @@ def create_app():
     app.register_blueprint(users_bp)
     app.register_blueprint(products_bp)
     app.register_blueprint(order_bp)
+    app.register_blueprint(payments_bp)
+    app.register_blueprint(payment_methods_bp)
+    app.register_blueprint(loyalty_bp)
+    app.register_blueprint(owner_bp)
 
     # Error handlers - safety net for routes without @auto_log_errors decorator
     @app.errorhandler(404)

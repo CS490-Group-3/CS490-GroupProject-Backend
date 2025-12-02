@@ -17,5 +17,9 @@ from .admin import admin_bp
 from .users import users_bp
 from .products import products_bp
 from .orders import order_bp
-__all__ = ['health_bp', 'auth_bp', 'appointments_bp', 'schedule_bp', 'salon_bp', 'upload_bp', 'services_bp', 'admin_bp', 'users_bp', 'reviews_bp', 'notifications_bp', 'products_bp', 'order_bp']
+from .payments import payments_bp
+from .payment_methods import payment_methods_bp
+from .loyalty import loyalty_bp
+from .owner import owner_bp
+__all__ = ['health_bp', 'auth_bp', 'appointments_bp', 'schedule_bp', 'salon_bp', 'upload_bp', 'services_bp', 'admin_bp', 'users_bp', 'reviews_bp', 'notifications_bp', 'products_bp', 'order_bp', 'payments_bp', 'payment_methods_bp', 'loyalty_bp', 'owner_bp']
 
