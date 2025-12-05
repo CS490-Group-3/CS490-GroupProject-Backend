@@ -20,13 +20,14 @@ def list_products_route():
     {
         salon_id: UUID,
         category_id: list(UUID) (optional)
+        example:/api/products?salon_id=<salon_id>&category_id=<category_id1>&category_id=<category_id2>
     }
     """
     try:
-        data = request.get_json() or {}
-        salon_id = data.get("salon_id")
-        category_ids = data.get("category_id", [])
         
+        salon_id = request.args.get("salon_id", default=None)
+        category_ids = request.args.getlist("category_id")
+        print("category_ids:", category_ids)
         if not salon_id:
             return jsonify({"error": "Missing 'salon_id'"}), 400
         products = ProductService.list_products(salon_id, category_ids)
