@@ -3,6 +3,7 @@ from typing import Dict, Optional, Tuple
 from gotrue.errors import AuthApiError
 import json
 from models.orders import OrderCreateRequest, OrderResponse, OrderUpdateRequest
+from models.products import ProductUpdateRequest
 from services.product_service import ProductService 
 class OrdersService:
     @staticmethod
@@ -167,6 +168,8 @@ class OrdersService:
                 return None, "Product does not belong to the same salon as the order"
             if product_data.get("stock_quantity", 0) < quantity:
                 return None, "Insufficient product stock"
+            if order_data.get("order_status") != "cart":
+                return None, "Cannot add items to a non-cart order"
             item_data["unit_price"] = product_data.get("price")
             response = supabase.table("order_items").insert(item_data).execute()
             if not response.data:
@@ -268,4 +271,147 @@ class OrdersService:
             return None, f"Authentication error: {str(auth_error)}"
         except Exception as e:
             return None, str(e)
+    @staticmethod
+    def checkout_cart(
+        user_id: str,
+        order_id: str
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Checkout the cart, changing its status from 'cart' to 'checked_out'.
+
+        Args:
+            user_id: ID of the user
+            order_id: ID of the order (cart)
+
+        Returns:
+            Tuple containing the checked out order dict or None, and an error message or None
+        """
+        try:
+            order_data, error = OrdersService.get_order_details(order_id)
+            if error:
+                return None, error
+            if order_data.get("order_status") != "cart":
+                return None, "Only carts can be checked out"
+            items, error = OrdersService.get_cart_items(order_id)
+            if error:
+                return None, error
+            if not items:
+                return None, "Cannot checkout an empty cart"
+            
+            for item in items:
+                product_data, error = ProductService.get_product(item.get("product_id"))
+                if error:
+                    return None, error
+                if product_data.get("stock_quantity", 0) < item.get("quantity", 0):
+                    return None, f"Insufficient stock for product ID {item.get('product_id')} {item.get('name','')}"
+                new_stock = product_data.get("stock_quantity") - item.get("quantity")
+                _, error = ProductService.update_product(item.get("product_id"), ProductUpdateRequest(stock_quantity=new_stock))
+                if error:
+                    return None, error
+                
+            update_data = {
+                "order_status": "pending"
+            }
+            response = supabase.table("orders").update(update_data).eq("id", order_id).execute()
+            if not response.data:
+                print("Checkout cart response data is empty:", response)
+                return None, "Failed to checkout cart"
+
+            checked_out_order = response.data[0] if response.data else None
+            return checked_out_order, None
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return None, str(e)
+    
+    @staticmethod
+    def cancel_order(user_id: str,
+        order_id: str
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Cancel an order, changing its status to 'canceled'.
+
+        Args:
+            user_id: ID of the user
+            order_id: ID of the order to cancel
+            
+        Returns:
+            Tuple containing the canceled order dict or None, and an error message or None
+        """
+        try:
+            order_data, error = OrdersService.get_order_details(order_id)
+            if error:
+                return None, error
+            if order_data.get("order_status") not in ["pending", "confirmed", "processing"]:
+                return None, "Only pending or checked out orders can be canceled"
+            items, error = OrdersService.get_cart_items(order_id)
+            if error:
+                return None, error
+            
+            for item in items:
+                product_data, error = ProductService.get_product(item.get("product_id"))
+                if error:
+                    return None, error
+                new_stock = product_data.get("stock_quantity") + item.get("quantity")
+                _, error = ProductService.update_product(item.get("product_id"), ProductUpdateRequest(stock_quantity=new_stock))
+                if error:
+                    return None, error
+            
+            update_data = {
+                "order_status": "cancelled"
+            }
+            response = supabase.table("orders").update(update_data).eq("id", order_id).execute()
+            if not response.data:
+                print("Cancel order response data is empty:", response)
+                return None, "Failed to cancel order"
+
+            canceled_order = response.data[0] if response.data else None
+            return canceled_order, None
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def update_order_status(
+        order_id: str,
+        new_status: str
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Update the status of an order.
+
+        Args:
+            order_id: ID of the order to update
+            new_status: New status to set for the order
+
+        Returns:
+            Tuple containing the updated order dict or None, and an error message or None
+        """
+        try:
+            if new_status not in ["confirmed", "processing", "shipped", "delivered"]:
+                return None, "Invalid order status"
+            order_data, error = OrdersService.get_order_details(order_id)
+            if error:
+                return None, error
+    
+            if order_data.get("order_status") == "delivered":
+                return None, "Cannot update a delivered order"
+            elif order_data.get("order_status") == "shipped" and new_status in ["cart", "confirmed", "processing"]:
+                return None, "Cannot revert a shipped order to an earlier status"
+            elif order_data.get("order_status") == "cart":
+                return None, "Only pending carts can be updated via this method"
+            elif order_data.get("order_status") == "cancelled":
+                return None, "Cannot update a canceled order"
+            
+            response = supabase.table("orders").update({"order_status": new_status}).eq("id", order_id).execute()
+            if not response.data:
+                print("Update order status response data is empty:", response)
+                return None, "Failed to update order status"
+
+            updated_order = response.data[0] if response.data else None
+            return updated_order, None
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return None, str(e)
+    
     

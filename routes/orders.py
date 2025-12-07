@@ -149,6 +149,81 @@ def delete_cart_item(order_id, item_id):
         return jsonify({"message": "Item deleted successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@order_bp.route("/cart/<order_id>/checkout", methods=["PATCH"])
+@login_required()
+def checkout_cart(order_id):
+    """
+    Checkout the current user's active cart.
+    """
+    try:
+        user_id = get_current_user().get('sub')
+
+        checked_out_order, error = OrdersService.checkout_cart(
+            user_id=user_id,
+            order_id=order_id
+        )
+
+        if error:
+            return jsonify({"error": error}), 400
+
+        order_response = OrderResponse.model_validate(checked_out_order).model_dump()
+        return jsonify({"order": order_response}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+@order_bp.route("/cart/<order_id>/canceled", methods=["PATCH"])
+@login_required()
+def cancel_cart(order_id):
+    """
+    Cancel the current user's pending, confirmed, or processing order.
+    """
+    try:
+        user_id = get_current_user().get('sub')
+
+        canceled_order, error = OrdersService.cancel_order(
+            user_id=user_id,
+            order_id=order_id
+        )
+
+        if error:
+            return jsonify({"error": error}), 400
+
+        order_response = OrderResponse.model_validate(canceled_order).model_dump()
+        return jsonify({"order": order_response}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@order_bp.route("/cart/<order_id>/status", methods=["PATCH"])
+@login_required()
+def update_order_status(order_id):
+    """
+    Update the status of an order.
+    """
+    try:
+        user_id = get_current_user().get('sub')
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON body"}), 400
+
+        order_update = OrderUpdateRequest.model_validate(data)
+        order_status = order_update.order_status
+        if not order_status:
+            return jsonify({"error": "order_status is required"}), 400
+        updated_order, error = OrdersService.update_order_status(
+            order_id=order_id,
+            new_status=order_status
+        )
+
+        if error:
+            return jsonify({"error": error}), 400
+
+        return jsonify({
+            "order": OrderResponse.model_validate(updated_order).model_dump()
+        }), 200
+    except ValidationError as ve:
+        return jsonify({"error": ve.errors()}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 #-------------- Order Routes ----#
 @order_bp.route("", methods=["GET"])
 @login_required()
