@@ -11,7 +11,7 @@ class OrderStatus(str, Enum):
     processing = "processing"
     shipped = "shipped"
     delivered = "delivered"
-    canceled = "canceled"
+    canceled = "cancelled"
     
 class OrderBase(BaseModel):
     user_id: Optional[str] = None
