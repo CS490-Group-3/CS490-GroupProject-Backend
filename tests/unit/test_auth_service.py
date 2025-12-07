@@ -74,11 +74,17 @@ def test_login_success(monkeypatch):
     class MockUser:
         id = "user-123"
         email = "test@example.com"
+        __dict__ = {"id": "user-123", "email": "test@example.com"}
     
     class MockSession:
         access_token = "access-token-123"
         refresh_token = "refresh-token-123"
         expires_in = 3600
+        __dict__ = {
+            "access_token": "access-token-123",
+            "refresh_token": "refresh-token-123",
+            "expires_in": 3600
+        }
     
     class MockAuthResponse:
         user = MockUser()
@@ -90,6 +96,7 @@ def test_login_success(monkeypatch):
     # Mock profile retrieval
     def fake_get_user_profile(user_id):
         return {
+            "id": "user-123",
             "role": "customer",
             "first_name": "John",
             "last_name": "Doe"
@@ -218,22 +225,19 @@ def test_get_user_profile_success(monkeypatch):
     """Test retrieving user profile."""
     
     class MockResponse:
-        data = {
-            "user_id": "user-123",
+        data = [{
+            "id": "user-123",
             "first_name": "John",
             "last_name": "Doe",
             "role": "customer",
             "phone": "555-1234"
-        }
+        }]
     
     class MockChain:
         def select(self, *args):
             return self
         
         def eq(self, *args):
-            return self
-        
-        def single(self):
             return self
         
         def execute(self):
@@ -247,7 +251,7 @@ def test_get_user_profile_success(monkeypatch):
     profile = AuthService.get_user_profile("user-123")
     
     assert profile is not None
-    assert profile["user_id"] == "user-123"
+    assert profile["id"] == "user-123"
     assert profile["first_name"] == "John"
     assert profile["role"] == "customer"
 
@@ -255,7 +259,7 @@ def test_get_user_profile_success(monkeypatch):
 def test_update_user_profile_success(monkeypatch):
     """Test updating user profile."""
     
-    class MockResponse:
+    class MockUpdateResponse:
         data = [{
             "user_id": "user-123",
             "first_name": "Jane",
@@ -263,7 +267,21 @@ def test_update_user_profile_success(monkeypatch):
             "phone": "555-9999"
         }]
     
+    class MockOldProfileResponse:
+        data = {
+            "user_id": "user-123",
+            "first_name": "John",
+            "last_name": "Doe"
+        }
+    
     class MockChain:
+        def __init__(self):
+            self._is_select = False
+        
+        def select(self, *args):
+            self._is_select = True
+            return self
+        
         def update(self, data):
             self.update_data = data
             return self
@@ -271,8 +289,13 @@ def test_update_user_profile_success(monkeypatch):
         def eq(self, *args):
             return self
         
+        def maybe_single(self):
+            return self
+        
         def execute(self):
-            return MockResponse()
+            if self._is_select:
+                return MockOldProfileResponse()
+            return MockUpdateResponse()
     
     def fake_table(name):
         return MockChain()
@@ -306,21 +329,36 @@ def test_update_user_role_success(monkeypatch):
     
     def fake_get_profile(user_id):
         if user_id == "admin-123":
-            return {"role": "admin"}
-        return {"role": "customer"}
+            return {"id": "admin-123", "role": "admin"}
+        return {"id": "user-123", "role": "customer"}
     
-    class MockResponse:
+    class MockUpdateResponse:
         data = [{"user_id": "user-123", "role": "salon_owner"}]
     
+    class MockOldProfileResponse:
+        data = {"user_id": "user-123", "role": "customer"}
+    
     class MockChain:
+        def __init__(self):
+            self._is_select = False
+        
+        def select(self, *args):
+            self._is_select = True
+            return self
+        
         def update(self, data):
             return self
         
         def eq(self, *args):
             return self
         
+        def maybe_single(self):
+            return self
+        
         def execute(self):
-            return MockResponse()
+            if self._is_select:
+                return MockOldProfileResponse()
+            return MockUpdateResponse()
     
     def fake_table(name):
         return MockChain()

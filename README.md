@@ -161,5 +161,68 @@ curl -i http://localhost:5001/
 
 ---
 
+## 🧪 Testing
+
+Run tests using pytest:
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run only unit tests
+pytest tests/unit/ -v
+
+# Run with coverage
+pytest tests/ --cov=. --cov-report=html
+```
+
+## 🚀 CI/CD
+
+This project uses GitHub Actions for CI/CD and Railway for deployment.
+
+### GitHub Actions Workflow
+
+The CI/CD pipeline (`/.github/workflows/ci-cd.yml`) automatically:
+1. Runs tests on every push and pull request
+2. Deploys to Railway on pushes to `main` or `dev` branches
+
+### Railway Deployment
+
+1. **Get Railway Token:**
+   - Go to Railway Dashboard → Settings → Tokens
+   - Create a new token
+
+2. **Set GitHub Secrets:**
+   - Go to GitHub repo → Settings → Secrets and variables → Actions
+   - Add the following secrets:
+     - `RAILWAY_TOKEN`: Your Railway API token
+     - `RAILWAY_PROJECT_ID`: Your Railway project ID
+     - `SUPABASE_URL`: Your Supabase URL
+     - `SUPABASE_KEY`: Your Supabase key
+     - `SUPABASE_JWT_SECRET`: Your Supabase JWT secret
+
+3. **Deployment:**
+   - Pushes to `main` branch deploy to production
+   - Pushes to `dev` branch deploy to staging
+   - The workflow automatically runs tests before deployment
+
+### Manual Railway Deployment
+
+If you need to deploy manually:
+
+```bash
+# Install Railway CLI
+npm install -g @railway/cli
+
+# Login
+railway login
+
+# Link to project
+railway link
+
+# Deploy
+railway up
+```
+
 ## ❓ Questions
-If anything’s unclear, open an issue or ask in the backend channel.
+If anything's unclear, open an issue or ask in the backend channel.
