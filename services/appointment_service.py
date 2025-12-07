@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo
 from services.auth_service import AuthService
 from services.error_logging_service import ErrorLoggingService
 from services.audit_logging_service import AuditLoggingService
+from services.loyalty_service import LoyaltyService
+import uuid
 
 class AppointmentService:
     # ------ helpers ------
@@ -133,6 +135,27 @@ class AppointmentService:
         barber_ids = {row["barber_id"] for row in rows if row.get("barber_id")}
         customer_ids = {row["customer_id"] for row in rows if row.get("customer_id")}
         appointment_ids = [row["id"] for row in rows if row.get("id")]
+        
+        # Fetch payment information for appointments
+        payments = {}
+        if appointment_ids:
+            payment_resp = (
+                supabase.table("payments")
+                .select("id, appointment_id, payment_status, amount, created_at")
+                .in_("appointment_id", appointment_ids)
+                .execute()
+            )
+            for payment in (payment_resp.data or []):
+                apt_id = payment.get("appointment_id")
+                if apt_id:
+                    # Store the most recent payment for each appointment
+                    if apt_id not in payments or payment.get("created_at", "") > payments[apt_id].get("created_at", ""):
+                        payments[apt_id] = {
+                            "id": payment.get("id"),
+                            "payment_status": payment.get("payment_status"),
+                            "amount": payment.get("amount"),
+                            "created_at": payment.get("created_at")
+                        }
 
         salons = {}
         if salon_ids:
@@ -300,6 +323,23 @@ class AppointmentService:
                     "avatar": row.get("profile_image_url"),
                 }
 
+        # Check for "barber_running_late" notifications for each appointment
+        running_late_map = {}
+        if appointment_ids:
+            try:
+                late_notifs = (
+                    supabase.table("notifications")
+                    .select("related_id")
+                    .in_("related_id", appointment_ids)
+                    .eq("notification_type", "barber_running_late")
+                    .execute()
+                )
+                for notif in (late_notifs.data or []):
+                    if notif.get("related_id"):
+                        running_late_map[notif["related_id"]] = True
+            except Exception:
+                pass  # If notification check fails, just continue without it
+
         hydrated = []
         for row in rows:
             enriched = dict(row)
@@ -309,6 +349,16 @@ class AppointmentService:
             enriched["customer"] = customers.get(row.get("customer_id"))
             if row.get("id") in reviews_map:
                 enriched["review"] = reviews_map[row["id"]]
+            # Add flag if barber is running late
+            enriched["barber_running_late"] = running_late_map.get(row.get("id"), False)
+            # Add payment information
+            payment_info = payments.get(row.get("id"))
+            if payment_info:
+                enriched["payment"] = payment_info
+                enriched["payment_status"] = payment_info.get("payment_status")
+            else:
+                enriched["payment"] = None
+                enriched["payment_status"] = None
             hydrated.append(enriched)
         return hydrated
 
@@ -510,6 +560,128 @@ class AppointmentService:
             if getattr(response, "error", None) or not response.data:
                 return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Update failed"
             
+            # Refund payment and handle loyalty points
+            try:
+                from services.payment_service import PaymentService
+                
+                # Find payment for this appointment
+                payment_response = supabase.table("payments")\
+                    .select("id, payment_status, loyalty_points_used, user_id, salon_id")\
+                    .eq("appointment_id", appointment_id)\
+                    .eq("payment_status", "completed")\
+                    .maybe_single()\
+                    .execute()
+                
+                if payment_response.data:
+                    payment = payment_response.data
+                    payment_id = payment["id"]
+                    loyalty_points_used = payment.get("loyalty_points_used", 0)
+                    user_id = payment.get("user_id")
+                    salon_id = payment.get("salon_id")
+                    
+                    # Refund the payment
+                    refund_success, refund_error = PaymentService.refund_payment(payment_id, reason=f"Appointment cancelled: {reason or 'No reason provided'}")
+                    if not refund_success and refund_error:
+                        ErrorLoggingService.log_exception(
+                            Exception(f"Failed to refund payment {payment_id}: {refund_error}"),
+                            severity='high'
+                        )
+                    
+                    # Refund redeemed loyalty points (add them back to balance)
+                    if loyalty_points_used > 0 and user_id and salon_id:
+                        try:
+                            # Get current balance
+                            balance, error = LoyaltyService.get_user_loyalty_balance(user_id, salon_id)
+                            if not error and balance:
+                                current_balance = balance.get("points_balance", 0)
+                                new_balance = current_balance + loyalty_points_used
+                                
+                                # Update balance
+                                supabase.table("loyalty_balances")\
+                                    .update({
+                                        "points_balance": new_balance,
+                                        "lifetime_points_redeemed": max(0, balance.get("lifetime_points_redeemed", 0) - loyalty_points_used),
+                                        "updated_at": datetime.now(timezone.utc).isoformat()
+                                    })\
+                                    .eq("id", balance["id"])\
+                                    .execute()
+                                
+                                # Create refund transaction record
+                                transaction_data = {
+                                    "id": str(uuid.uuid4()),
+                                    "user_id": user_id,
+                                    "salon_id": salon_id,
+                                    "transaction_type": "earned",  # Points returned
+                                    "points": loyalty_points_used,
+                                    "appointment_id": appointment_id,
+                                    "payment_id": payment_id,
+                                    "description": f"Points refunded due to appointment cancellation"
+                                }
+                                supabase.table("loyalty_transactions")\
+                                    .insert(transaction_data)\
+                                    .execute()
+                        except Exception as e:
+                            ErrorLoggingService.log_exception(
+                                Exception(f"Failed to refund loyalty points for cancelled appointment {appointment_id}: {str(e)}"),
+                                severity='medium'
+                            )
+                
+                # Remove loyalty points that were earned for this appointment
+                # Points are awarded when payment is completed, so we need to reverse them on cancellation
+                trans_response = supabase.table("loyalty_transactions")\
+                    .select("id, points, user_id, salon_id")\
+                    .eq("appointment_id", appointment_id)\
+                    .eq("transaction_type", "earned")\
+                    .execute()
+                
+                if trans_response.data:
+                    for trans in trans_response.data:
+                        # Skip if this is the refund transaction we just created
+                        if "refunded" in trans.get("description", "").lower():
+                            continue
+                            
+                        user_id = trans["user_id"]
+                        salon_id = trans["salon_id"]
+                        points = trans["points"]
+                        
+                        # Get current balance
+                        balance, error = LoyaltyService.get_user_loyalty_balance(user_id, salon_id)
+                        if error or not balance:
+                            continue
+                        
+                        current_balance = balance.get("points_balance", 0)
+                        new_balance = max(0, current_balance - points)  # Don't go negative
+                        
+                        # Update balance
+                        supabase.table("loyalty_balances")\
+                            .update({
+                                "points_balance": new_balance,
+                                "lifetime_points_earned": max(0, balance.get("lifetime_points_earned", 0) - points),
+                                "updated_at": datetime.now(timezone.utc).isoformat()
+                            })\
+                            .eq("id", balance["id"])\
+                            .execute()
+                        
+                        # Create expired transaction record
+                        transaction_data = {
+                            "id": str(uuid.uuid4()),
+                            "user_id": user_id,
+                            "salon_id": salon_id,
+                            "transaction_type": "expired",
+                            "points": -points,  # Negative to show deduction
+                            "appointment_id": appointment_id,
+                            "description": f"Points removed due to appointment cancellation"
+                        }
+                        supabase.table("loyalty_transactions")\
+                            .insert(transaction_data)\
+                            .execute()
+            except Exception as e:
+                # Log but don't fail appointment cancellation
+                ErrorLoggingService.log_exception(
+                    Exception(f"Failed to process refunds for cancelled appointment {appointment_id}: {str(e)}"),
+                    severity='medium'
+                )
+            
             # Log audit
             AuditLoggingService.log_audit(
                 table_name='appointments',
@@ -694,6 +866,10 @@ class AppointmentService:
         response = supabase.table("appointments").update(update).eq("id", appointment_id).execute()
         if getattr(response, "error", None) or not response.data:
             return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Update failed"
+        
+        # Note: Loyalty points are now awarded when payment is completed, not when appointment is completed
+        # This was moved to the payment processing flow
+        
         return AppointmentService.get_by_id(appointment_id, user=user)
 
 
