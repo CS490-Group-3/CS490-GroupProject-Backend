@@ -2,7 +2,7 @@ from config import supabase
 from typing import Dict, Optional, Tuple
 from gotrue.errors import AuthApiError
 import json
-from models.orders import OrderCreateRequest, OrderResponse, OrderUpdateRequest
+from models.orders import OrderCreateRequest, OrderItemUpdateRequest, OrderResponse, OrderUpdateRequest
 from models.products import ProductUpdateRequest
 from services.product_service import ProductService 
 class OrdersService:
@@ -48,6 +48,9 @@ class OrdersService:
             Tuple containing the created order dict or None, and an error message or None
         """
         try:
+            cart, error = OrdersService.get_active_cart(data.user_id, data.salon_id)
+            if error is None and cart:
+                return None, "An active cart already exists for this salon"
             response = supabase.table("orders").insert(data.dict()).execute()
             if not response.data:
                 print("Order creation response data is empty:", response)
@@ -163,7 +166,11 @@ class OrdersService:
             order_data, error = OrdersService.get_order_details(order_id)
             if error:
                 return None, error
-            
+            items, error = OrdersService.get_cart_items(order_id)
+            if items:
+                item_ids = [item["product_id"] for item in items]
+                if product_id in item_ids:
+                    return None, "Product already in cart. Please update the quantity instead."
             if product_data.get("salon_id") != order_data.get("salon_id"):
                 return None, "Product does not belong to the same salon as the order"
             if product_data.get("stock_quantity", 0) < quantity:
@@ -183,11 +190,33 @@ class OrdersService:
         except Exception as e:
 
             return None, str(e)
+    
+    @staticmethod
+    def get_cart_item(
+        item_id: str
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Get an order item by its ID.
+
+        Args:
+            item_id: ID of the order item to retrieve
+
+        Returns:
+            Order item dict or None
+        """
+        try:
+            response = supabase.table("order_items").select("*").eq("id", item_id).execute()
+            if not response.data:
+                return None, "Order item not found"
+            return response.data[0], None
+        except Exception as e:
+            print(f"Error retrieving order item {item_id}: {e}")
+            return None, str(e)
     @staticmethod
     def update_cart_item(
         order_id: str,
         item_id: str,
-        item_update: Dict
+        item_update: OrderItemUpdateRequest
     ) -> Tuple[Optional[Dict], Optional[str]]:
         """
         Update an item in the cart.
@@ -200,14 +229,22 @@ class OrdersService:
             Tuple containing the updated order item dict or None, and an error message or None
         """
         try:
-            order_data =OrdersService.get_order_details(order_id)
-            if order_data.get("order_status") != "cart":
+            order_data, error =OrdersService.get_order_details(order_id)
+            if error:
+                return None, error
+            if order_data["order_status"] != "cart":
                 return None, "Cannot update item in a non-cart order"
-            update_data = {}
-            if "quantity" in item_update:
-                update_data["quantity"] = item_update["quantity"]
-            if "unit_price" in item_update:
-                update_data["unit_price"] = item_update["unit_price"]
+            update_data = item_update.dict(exclude_unset=True)
+            
+            item_data, error = OrdersService.get_cart_item(item_id)
+            if error:
+                return None, error
+            if "quantity" in update_data:
+                product_data, error = ProductService.get_product(item_data["product_id"])
+                if error:
+                    return None, error
+                if product_data["stock_quantity"] < update_data["quantity"]:
+                    return None, "Insufficient product stock"
 
             response = supabase.table("order_items").update(update_data).eq("id", item_id).execute()
             if not response.data:
@@ -235,13 +272,22 @@ class OrdersService:
             Tuple containing a boolean indicating success, and an error message or None
         """
         try:
-            order_data = OrdersService.get_order_details(order_id)
-            if order_data.get("order_status") != "cart":
+            order_data,error = OrdersService.get_order_details(order_id)
+            print("check 23:", order_data)
+            if error:
+                print("Error getting order details:", error)
+                return False, error
+            
+            print("check 3:", order_data)
+            if order_data["order_status"] != "cart":
                 return False, "Cannot remove item from a non-cart order"
+            item_data, error = OrdersService.get_cart_item(item_id)
+            if error:
+                return False, error
             response = supabase.table("order_items").delete().eq("id", item_id).execute()
-            if response.status_code != 200:
+            if not response.data:
                 print("Remove cart item response indicates failure:", response)
-                return False, "Failed to remove cart item"
+                return False, "Failed to remove cart item "
 
             return True, None
         except AuthApiError as auth_error:
@@ -409,6 +455,49 @@ class OrdersService:
 
             updated_order = response.data[0] if response.data else None
             return updated_order, None
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def delete_order(
+        order_id: str
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Delete an order by its ID.
+
+        Args:
+            order_id: ID of the order to delete
+
+        Returns:
+            Tuple containing a boolean indicating success, and an error message or None
+        """
+        try:
+            order_data, error = OrdersService.get_order_details(order_id)
+            if error:
+                print("Delete order failed to get order details:", error)
+                return None, "Order not found"
+            
+            if order_data["order_status"] != "cart":
+                return None, "Only cart orders can be deleted"
+            
+            items, error = OrdersService.get_cart_items(order_id)
+            if items:
+                print("Order items to delete:", items, len(items))
+                for item in items:
+                    print("deleting item:", item, "\n")
+                    print("order id:", order_id, " item id:", item["id"])
+                    response, error =OrdersService.remove_cart_item(order_id, item["id"])
+                    if error:
+                        print("Error deleting order item:", error)
+                        return None, error
+                    print(response)
+            response = supabase.table("orders").delete().eq("id", order_id).execute()
+            if not response.data:
+                print("Delete order response indicates failure:", response)
+                return None, "Failed to delete order"
+
+            return "Order Deleted", None
         except AuthApiError as auth_error:
             return None, f"Authentication error: {str(auth_error)}"
         except Exception as e:

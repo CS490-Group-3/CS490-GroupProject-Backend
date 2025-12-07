@@ -43,6 +43,21 @@ def get_cart():
             return jsonify({"carts": carts_response}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@order_bp.route("/cart/<order_id>", methods=["DELETE"])
+@login_required()
+def delete_order(order_id):
+    """
+    Delete an order by order ID.
+    """
+    try:
+        success, error = OrdersService.delete_order(order_id)
+        if error:
+            return jsonify({"error2": error}), 400
+
+        return jsonify({"message": "Order deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error1": str(e)}), 500
     
 @order_bp.route("/cart/<order_id>/items", methods=["GET"])
 @login_required()
@@ -97,6 +112,27 @@ def add_item(order_id):
     except Exception as e:
         print("Error in add_item route:", str(e))
         return jsonify({"error": str(e)}), 500
+@order_bp.route("/cart/<order_id>/items/<item_id>", methods=["GET"])
+@login_required()
+def get_cart_item(order_id, item_id):
+    """
+    Retrieve a specific item in the current user's active cart.
+    """
+    try:
+        user_id = get_current_user().get('sub')
+
+        item, error = OrdersService.get_cart_item(
+            item_id=item_id
+        )
+
+        if error:
+            return jsonify({"error": error}), 404
+
+        return jsonify({
+            "item": OrderItemResponse.model_validate(item).model_dump()
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 @order_bp.route("/cart/<order_id>/items/<item_id>", methods=["PATCH"])
 @login_required()
 def update_cart_item(order_id, item_id):
@@ -115,7 +151,7 @@ def update_cart_item(order_id, item_id):
         updated_item, error = OrdersService.update_cart_item(
             order_id=order_id,
             item_id=item_id,
-            data=item_update
+            item_update=item_update
         )
 
         if error:
@@ -138,7 +174,7 @@ def delete_cart_item(order_id, item_id):
     try:
         user_id = get_current_user().get('sub')
 
-        success, error = OrdersService.delete_cart_item(
+        success, error = OrdersService.remove_cart_item(
             order_id=order_id,
             item_id=item_id
         )
@@ -252,6 +288,7 @@ def create_order_route():
     """
     try:
         json_data = request.get_json()
+        json_data["user_id"] = get_current_user().get('sub')
         if not json_data:
             return jsonify({"error": "Invalid JSON body"}), 400
 
@@ -282,4 +319,5 @@ def get_order(order_id):
         return jsonify({"order": order_response}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
