@@ -26,6 +26,9 @@ def test_full_approval_workflow(client, mock_supabase):
 
     #  Admin rejects
     res = client.patch(f"/api/salons/{salon_id}/reject", json={"reason": "Incomplete docs"})
+    if res.status_code != 200:
+        print(f"Reject failed with status {res.status_code}")
+        print(f"Response: {res.get_json()}")
     assert res.status_code == 200
     assert any(n["title"] == "Salon Denied" for n in mock_supabase["notifications"])
 

@@ -100,6 +100,7 @@ def client():
 def mock_supabase(monkeypatch):
     from services import salon_service, notification_service
     import config
+    from unittest.mock import Mock
 
     TEST_OWNER_ID = "00000000-0000-0000-0000-000000000000"
     ADMIN_ID = "admin-uuid"
@@ -114,6 +115,10 @@ def mock_supabase(monkeypatch):
             {"id": ADMIN_ID, "email": "admin@test.com", "role": "admin"}
         ],
     }
+
+    # Mock requests.post to prevent actual HTTP calls in _send_email
+    mock_requests_post = Mock(return_value=Mock(status_code=200))
+    monkeypatch.setattr("services.notification_service.requests.post", mock_requests_post)
 
     class MockTable:
         def __init__(self, name):
@@ -161,6 +166,10 @@ def mock_supabase(monkeypatch):
             return self
 
         def single(self):
+            self._single = True
+            return self
+
+        def maybe_single(self):
             self._single = True
             return self
 
