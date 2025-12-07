@@ -157,25 +157,26 @@ def test_get_active_cart_creates_new(monkeypatch):
         "salon_id": "salon-1"
     }
     
-    # Mock Supabase: first call returns empty, second call (create) returns new cart
-    call_count = [0]
+    # Mock Supabase: first call (select) returns empty, second call (insert) returns new cart
+    operation_type = []
     
     def fake_table(name):
         class MockTable:
             def select(self, *args):
+                operation_type.append("select")
                 return self
             def eq(self, *args, **kwargs):
                 return self
             def insert(self, data):
+                operation_type.append("insert")
                 return self
             def execute(self):
-                call_count[0] += 1
                 mock_response = Mock()
-                if call_count[0] == 1:
+                if operation_type[-1] == "select":
                     # First call: no cart exists
                     mock_response.data = []
                 else:
-                    # Second call: cart created
+                    # Second call: cart created via insert
                     mock_response.data = [mock_cart]
                 mock_response.error = None
                 return mock_response
