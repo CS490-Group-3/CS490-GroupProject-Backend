@@ -157,27 +157,31 @@ def test_get_active_cart_creates_new(monkeypatch):
         "salon_id": "salon-1"
     }
     
-    # Mock Supabase: first call (select) returns empty, second call (insert) returns new cart
-    operation_type = []
+    # Mock Supabase: track operation type using shared state
+    # This needs to be shared across multiple table() calls (select and insert)
+    shared_state = {"last_op": None}
     
     def fake_table(name):
         class MockTable:
             def select(self, *args):
-                operation_type.append("select")
+                shared_state["last_op"] = "select"
                 return self
             def eq(self, *args, **kwargs):
                 return self
             def insert(self, data):
-                operation_type.append("insert")
+                shared_state["last_op"] = "insert"
                 return self
             def execute(self):
                 mock_response = Mock()
-                if operation_type[-1] == "select":
-                    # First call: no cart exists
+                if shared_state["last_op"] == "select":
+                    # First call: no cart exists (select query)
                     mock_response.data = []
-                else:
+                elif shared_state["last_op"] == "insert":
                     # Second call: cart created via insert
                     mock_response.data = [mock_cart]
+                else:
+                    # Fallback - should not happen
+                    mock_response.data = []
                 mock_response.error = None
                 return mock_response
         return MockTable()
@@ -187,6 +191,6 @@ def test_get_active_cart_creates_new(monkeypatch):
     # Test REAL OrdersService.get_active_cart() method
     cart, error = OrdersService.get_active_cart("user-123", "salon-1")
     
-    assert error is None
-    assert cart is not None
+    assert error is None, f"Expected no error but got: {error}. Last op: {shared_state['last_op']}"
+    assert cart is not None, "Expected cart to be created but got None"
     assert cart["order_status"] == "cart"
