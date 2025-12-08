@@ -1,9 +1,0 @@
-# Force Python provider since we have Supabase Deno functions that confuse auto-detection
-providers = ["python"]
-
-[phases.install]
-cmds = ["pip install -r requirements.txt"]
-
-[start]
-cmd = "gunicorn app:app --bind 0.0.0.0:$PORT"
-

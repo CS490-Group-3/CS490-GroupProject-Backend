@@ -72,7 +72,7 @@ jobs:
       
       - name: Setup Railway CLI
         run: |
-          curl -fsSL https://railway.app/install.sh | sh
+          npm install -g @railway/cli --force
       
       - name: Deploy to Railway
         env:
