@@ -1,0 +1,49 @@
+---
+tags:
+  - Payments
+summary: Get a single payment by ID
+description: >
+  Retrieve details of a specific payment.
+  Users can only access their own payments.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: payment_id
+    type: string
+    format: uuid
+    required: true
+    description: Payment UUID
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+responses:
+  200:
+    description: Payment details
+    schema:
+      type: object
+      properties:
+        payment:
+          type: object
+
+  404:
+    description: Payment not found
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Payment not found"
+
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

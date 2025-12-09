@@ -1,0 +1,60 @@
+---
+tags:
+  - Admin
+summary: Export error logs to CSV
+description: >
+  Export error logs to CSV format for download.
+  Returns a CSV table with error log entries including timestamp, severity,
+  error type, message, endpoint, and user ID.
+  Supports optional filtering by severity, date range, and limit.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+  - in: query
+    name: limit
+    required: false
+    schema:
+      type: integer
+      default: 1000
+    description: Maximum number of logs to export
+    example: 1000
+  - in: query
+    name: severity
+    required: false
+    schema:
+      type: string
+      enum: [low, medium, high, critical]
+    description: Filter by severity level
+    example: "high"
+  - in: query
+    name: start_date
+    required: false
+    schema:
+      type: string
+      format: date-time
+    description: Filter logs from this date (ISO format)
+    example: "2024-01-01T00:00:00Z"
+  - in: query
+    name: end_date
+    required: false
+    schema:
+      type: string
+      format: date-time
+    description: Filter logs until this date (ISO format)
+    example: "2024-01-31T23:59:59Z"
+responses:
+  200:
+    description: CSV file download
+    schema:
+      type: file
+  400:
+    description: Bad request
+  403:
+    description: Forbidden
+  500:
+    description: Internal server error
+

@@ -1,12 +1,9 @@
 ---
 tags:
-  - Payments
-summary: Create appointment and process payment atomically
+  - Orders
+summary: Checkout and process payment
 description: >
-  Creates an appointment and processes payment in a single transaction.
-  The appointment is only created if payment succeeds.
-  Supports both saved payment methods and new card details.
-  Can optionally redeem loyalty points for a discount.
+  Process payment for an order and complete checkout. Supports saved payment methods, new cards, and loyalty point redemption.
 consumes:
   - application/json
 produces:
@@ -24,43 +21,25 @@ parameters:
     required: true
     schema:
       type: object
-      required: [appointment]
+      required: [order_id]
       properties:
-        appointment:
-          type: object
-          required: [barber_id, service_id, salon_id, start_at, end_at]
-          properties:
-            barber_id:
-              type: string
-              format: uuid
-              example: "a1234567-89ab-cdef-0123-456789abcdef"
-            service_id:
-              type: string
-              format: uuid
-              example: "b1234567-89ab-cdef-0123-456789abcdef"
-            salon_id:
-              type: string
-              format: uuid
-              example: "c1234567-89ab-cdef-0123-456789abcdef"
-            start_at:
-              type: string
-              format: date-time
-              example: "2024-12-25T10:00:00Z"
-            end_at:
-              type: string
-              format: date-time
-              example: "2024-12-25T11:00:00Z"
-            notes:
-              type: string
-              example: "Please use clippers"
+        order_id:
+          type: string
+          format: uuid
+          description: Order UUID
+          example: "a1234567-89ab-cdef-0123-456789abcdef"
+        shipping_address:
+          type: string
+          description: Shipping address
+          example: "123 Main St, City, State 12345"
         payment_method_id:
           type: string
           format: uuid
-          description: Use saved payment method (optional if providing new card)
+          description: Saved payment method ID (optional if providing new card)
           example: "d1234567-89ab-cdef-0123-456789abcdef"
         card_number:
           type: string
-          description: New card number (required if payment_method_id not provided)
+          description: New card number (optional if using saved method)
           example: "4111111111111111"
         exp_month:
           type: integer
@@ -68,7 +47,7 @@ parameters:
           example: 12
         exp_year:
           type: integer
-          description: Expiration year
+          description: Expiration year (4 digits)
           example: 2025
         cvv:
           type: string
@@ -76,16 +55,18 @@ parameters:
           example: "123"
         cardholder_name:
           type: string
+          description: Cardholder name
           example: "John Doe"
         billing_address:
           type: object
+          description: Billing address
           properties:
             line1:
               type: string
               example: "123 Main St"
             line2:
               type: string
-              example: ""
+              example: "Apt 4B"
             city:
               type: string
               example: "New York"
@@ -100,37 +81,40 @@ parameters:
               example: "US"
         save_payment_method:
           type: boolean
-          description: Save this card for future use
+          description: Whether to save the new card
           default: false
         redeem_loyalty_points:
           type: boolean
-          description: Use loyalty points for discount
+          description: Whether to redeem loyalty points for discount
           default: false
 
 responses:
-  201:
-    description: Appointment created and payment processed successfully
+  200:
+    description: Order placed successfully
     schema:
       type: object
       properties:
         message:
           type: string
-          example: "Appointment created and payment processed successfully"
-        appointment:
+          example: "Order placed successfully"
+        order:
           type: object
+          description: Updated order
         payment:
           type: object
+          description: Payment record
 
   400:
-    description: Validation error or payment failure
+    description: Invalid request or payment failed
     schema:
       type: object
       properties:
         error:
           type: string
-          example: "Payment failed: Insufficient funds"
+          example: "Cart is empty"
 
   401:
     description: Unauthorized
   500:
     description: Server error
+

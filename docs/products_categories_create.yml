@@ -1,0 +1,58 @@
+---
+tags:
+  - Products
+summary: Create a new product category
+description: >
+  Create a new product category. Only admins and salon owners can create categories.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          example: "Hair Care"
+        description:
+          type: string
+          example: "Products for hair care and styling"
+        parent_category_id:
+          type: string
+          format: uuid
+          description: Optional parent category for hierarchical structure
+
+responses:
+  201:
+    description: Category created successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Category created successfully"
+        category:
+          type: object
+
+  400:
+    description: Validation error
+  401:
+    description: Unauthorized
+  403:
+    description: Forbidden - insufficient permissions
+  500:
+    description: Server error
+
+

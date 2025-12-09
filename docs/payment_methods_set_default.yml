@@ -1,0 +1,50 @@
+---
+tags:
+  - Payment Methods
+summary: Set a payment method as default
+description: >
+  Mark a saved payment method as the default for the user.
+  This will unset any previously default payment method.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: payment_method_id
+    type: string
+    format: uuid
+    required: true
+    description: Payment method UUID
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+responses:
+  200:
+    description: Default payment method updated successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Default payment method updated successfully"
+
+  400:
+    description: Invalid payment method or operation failed
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Payment method not found"
+
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

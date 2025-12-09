@@ -1,0 +1,53 @@
+---
+tags:
+  - Loyalty
+summary: Calculate potential loyalty points
+description: >
+  Calculate potential loyalty points for a given amount at a salon.
+  Returns the number of points that would be earned for the specified amount
+  based on the salon's loyalty program configuration.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+  - in: query
+    name: salon_id
+    required: true
+    schema:
+      type: string
+      format: uuid
+    description: Salon ID
+    example: "123e4567-e89b-12d3-a456-426614174000"
+  - in: query
+    name: amount
+    required: true
+    schema:
+      type: number
+      format: float
+    description: Purchase amount
+    example: 50.00
+responses:
+  200:
+    description: Potential points calculated successfully
+    schema:
+      type: object
+      properties:
+        points:
+          type: integer
+          description: Number of points that would be earned
+        amount:
+          type: number
+          description: The purchase amount
+        salon_id:
+          type: string
+          format: uuid
+  400:
+    description: Bad request - missing or invalid parameters
+  401:
+    description: Unauthorized
+  500:
+    description: Internal server error
+

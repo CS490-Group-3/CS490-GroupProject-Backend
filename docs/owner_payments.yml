@@ -1,0 +1,55 @@
+---
+tags:
+  - Owner
+summary: Get payment history for salon
+description: >
+  Get payment history for the salon owner's salon.
+  Supports filtering by date range.
+  Only salon owners and admins can access this.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: query
+    name: start_date
+    type: string
+    format: date
+    required: false
+    description: Start date for filtering (YYYY-MM-DD)
+    example: "2024-01-01"
+
+  - in: query
+    name: end_date
+    type: string
+    format: date
+    required: false
+    description: End date for filtering (YYYY-MM-DD)
+    example: "2024-12-31"
+
+responses:
+  200:
+    description: Payment history for the salon
+    schema:
+      type: object
+      properties:
+        payments:
+          type: array
+          items:
+            type: object
+
+  404:
+    description: Salon not found
+  401:
+    description: Unauthorized
+  403:
+    description: Forbidden - not a salon owner
+  500:
+    description: Server error
+
+

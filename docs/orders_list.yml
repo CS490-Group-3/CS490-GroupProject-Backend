@@ -1,0 +1,90 @@
+---
+tags:
+  - Orders
+summary: Get customer orders
+description: >
+  Get all orders for the authenticated customer (excluding cart status).
+  Orders are grouped by salon and include order items.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: query
+    name: salon_id
+    type: string
+    format: uuid
+    required: false
+    description: Filter by salon ID
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+  - in: query
+    name: status
+    type: string
+    enum: [pending, confirmed, processing, shipped, delivered, cancelled]
+    required: false
+    description: Filter by order status
+    example: "confirmed"
+
+responses:
+  200:
+    description: List of orders
+    schema:
+      type: object
+      properties:
+        orders:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              user_id:
+                type: string
+                format: uuid
+              salon_id:
+                type: string
+                format: uuid
+              order_status:
+                type: string
+                enum: [pending, confirmed, processing, shipped, delivered, cancelled]
+              subtotal:
+                type: number
+              tax:
+                type: number
+              shipping_cost:
+                type: number
+              total_amount:
+                type: number
+              shipping_address:
+                type: string
+              notes:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+              items:
+                type: array
+                items:
+                  type: object
+              salon:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  address:
+                    type: string
+
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+

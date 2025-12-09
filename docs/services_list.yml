@@ -1,0 +1,62 @@
+---
+tags:
+  - Services
+summary: List services globally or for a specific salon
+description: >
+  List services globally or filtered by salon.
+  Can optionally return unique service names only.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+  - in: query
+    name: salon_id
+    required: false
+    schema:
+      type: string
+      format: uuid
+    description: Filter by salon ID
+    example: "123e4567-e89b-12d3-a456-426614174000"
+  - in: query
+    name: unique
+    required: false
+    schema:
+      type: string
+      enum: [name]
+    description: If set to "name", returns only unique service names
+    example: "name"
+responses:
+  200:
+    description: Services retrieved successfully
+    schema:
+      type: object
+      properties:
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              salon_id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              description:
+                type: string
+              duration_minutes:
+                type: integer
+              price:
+                type: number
+              is_active:
+                type: boolean
+  401:
+    description: Unauthorized
+  500:
+    description: Internal server error
+

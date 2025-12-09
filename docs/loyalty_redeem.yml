@@ -1,0 +1,68 @@
+---
+tags:
+  - Loyalty
+summary: Check if user can redeem loyalty points
+description: >
+  Validates if the user has enough loyalty points to redeem for a discount.
+  This is informational - actual redemption happens during payment creation.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required: [salon_id]
+      properties:
+        salon_id:
+          type: string
+          format: uuid
+          example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+responses:
+  200:
+    description: User can redeem points
+    schema:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "You can redeem 100 points for a 10% discount"
+        pointThreshold:
+          type: integer
+          example: 100
+        rewardDiscount:
+          type: integer
+          example: 10
+        currentBalance:
+          type: integer
+          example: 150
+
+  400:
+    description: Insufficient points or loyalty program not available
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Insufficient points. Need 100, have 50"
+
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

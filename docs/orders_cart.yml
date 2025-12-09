@@ -1,0 +1,50 @@
+---
+tags:
+  - Orders
+summary: Get user's shopping cart
+description: >
+  Retrieve the current user's active shopping cart for a specific salon.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: query
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon UUID
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+responses:
+  200:
+    description: Cart retrieved successfully
+    schema:
+      type: object
+      properties:
+        cart:
+          type: object
+
+  400:
+    description: Invalid request or missing salon_id
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Missing 'salon_id'"
+
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

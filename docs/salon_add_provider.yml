@@ -1,9 +1,11 @@
 ---
 tags:
   - Salon
-summary: Add a service provider to a salon
+summary: Add or rehire a service provider to a salon
 description: >
-  Creates a barber profile and links it to a salon using an existing user account.  
+  Adds a barber to a salon or rehires a previously fired employee.
+  If the barber already has a record (even if inactive), updates it instead of creating a new one.
+  This handles rehiring previously fired employees by updating their salon_id and setting is_active = True.
   Only admins or salon owners may perform this action.
 consumes:
   - application/json
@@ -35,11 +37,6 @@ parameters:
         bio:
           type: string
           example: "Fade specialist with 8 years of experience."
-        specialties:
-          type: array
-          items:
-            type: string
-          example: ["fades", "braids"]
         years_experience:
           type: integer
           example: 8
@@ -50,7 +47,7 @@ parameters:
 
 responses:
   201:
-    description: Provider added successfully
+    description: Provider added or rehired successfully
     schema:
       type: object
       properties:

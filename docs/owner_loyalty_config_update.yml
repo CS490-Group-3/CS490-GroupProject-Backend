@@ -1,0 +1,75 @@
+---
+tags:
+  - Owner
+summary: Create or update loyalty program configuration
+description: >
+  Create or update loyalty program settings for the salon owner's salon.
+  Only salon owners and admins can perform this action.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required: []
+      properties:
+        pointsPerDollar:
+          type: number
+          format: float
+          description: Points earned per dollar spent
+          example: 1.0
+        pointThreshold:
+          type: integer
+          description: Minimum points required for redemption
+          example: 100
+        rewardDiscount:
+          type: integer
+          description: Discount percentage when redeeming points
+          example: 10
+
+responses:
+  200:
+    description: Loyalty program updated successfully
+    schema:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Loyalty program settings updated successfully"
+        config:
+          type: object
+          properties:
+            pointsPerDollar:
+              type: number
+              format: float
+            pointThreshold:
+              type: integer
+            rewardDiscount:
+              type: integer
+
+  400:
+    description: Invalid request body
+  404:
+    description: Salon not found
+  401:
+    description: Unauthorized
+  403:
+    description: Forbidden - not a salon owner
+  500:
+    description: Server error
+
+

@@ -1,0 +1,56 @@
+---
+tags:
+  - Services
+summary: Get service details by ID
+description: >
+  Get detailed information about a specific service by its ID.
+parameters:
+  - in: path
+    name: service_id
+    required: true
+    schema:
+      type: string
+      format: uuid
+    description: Service ID
+    example: "123e4567-e89b-12d3-a456-426614174000"
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+responses:
+  200:
+    description: Service retrieved successfully
+    schema:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        salon_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        duration_minutes:
+          type: integer
+        price:
+          type: number
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+  404:
+    description: Service not found
+  401:
+    description: Unauthorized
+  500:
+    description: Internal server error
+

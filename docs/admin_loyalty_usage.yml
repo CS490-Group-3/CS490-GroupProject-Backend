@@ -1,0 +1,129 @@
+---
+tags:
+  - Admin
+summary: Get loyalty program usage statistics
+description: >
+  Get comprehensive loyalty program usage statistics across all salons.
+  Includes total programs, transactions, points earned/redeemed/expired, active users,
+  and breakdown by salon with program configurations.
+  Supports filtering by date range.
+  Only admins can access this.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: query
+    name: start_date
+    type: string
+    format: date-time
+    required: false
+    description: Start date for filtering (ISO 8601 format)
+    example: "2024-01-01T00:00:00Z"
+
+  - in: query
+    name: end_date
+    type: string
+    format: date-time
+    required: false
+    description: End date for filtering (ISO 8601 format)
+    example: "2024-12-31T23:59:59Z"
+
+responses:
+  200:
+    description: Loyalty program usage statistics
+    schema:
+      type: object
+      properties:
+        total_programs:
+          type: integer
+          description: Number of active loyalty programs
+          example: 25
+        total_transactions:
+          type: integer
+          description: Total loyalty transactions
+          example: 5000
+        total_points_earned:
+          type: integer
+          description: Total points earned across all programs
+          example: 500000
+        total_points_redeemed:
+          type: integer
+          description: Total points redeemed
+          example: 150000
+        total_points_expired:
+          type: integer
+          description: Total points expired
+          example: 5000
+        total_current_balance:
+          type: number
+          description: Current total points balance across all users
+          example: 345000
+        unique_users:
+          type: integer
+          description: Number of unique users participating
+          example: 1200
+        salon_breakdown:
+          type: array
+          description: Usage statistics by salon (sorted by points earned descending)
+          items:
+            type: object
+            properties:
+              salon_id:
+                type: string
+                example: "uuid"
+              salon_name:
+                type: string
+                example: "Fade Factory Barbershop"
+              program_active:
+                type: boolean
+                example: true
+              points_per_dollar:
+                type: number
+                example: 1.0
+              reward_threshold:
+                type: integer
+                example: 100
+              reward_discount:
+                type: integer
+                example: 10
+              transactions:
+                type: integer
+                example: 500
+              points_earned:
+                type: integer
+                example: 50000
+              points_redeemed:
+                type: integer
+                example: 15000
+              points_expired:
+                type: integer
+                example: 500
+              current_balance:
+                type: number
+                example: 34500
+              active_users:
+                type: integer
+                example: 120
+        date_range:
+          type: object
+          properties:
+            start:
+              type: string
+              nullable: true
+            end:
+              type: string
+              nullable: true
+
+  401:
+    description: Unauthorized
+  403:
+    description: Forbidden - not an admin
+  500:
+    description: Server error
+

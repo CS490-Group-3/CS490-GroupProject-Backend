@@ -1,0 +1,69 @@
+---
+tags:
+  - Orders
+summary: Add item to cart
+description: >
+  Add a product to the user's shopping cart. If the product already exists in the cart, the quantity will be increased.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required: [salon_id, product_id]
+      properties:
+        salon_id:
+          type: string
+          format: uuid
+          description: Salon UUID
+          example: "a1234567-89ab-cdef-0123-456789abcdef"
+        product_id:
+          type: string
+          format: uuid
+          description: Product UUID
+          example: "b1234567-89ab-cdef-0123-456789abcdef"
+        quantity:
+          type: integer
+          minimum: 1
+          default: 1
+          description: Quantity to add
+          example: 2
+
+responses:
+  200:
+    description: Item added to cart successfully
+    schema:
+      type: object
+      properties:
+        item:
+          type: object
+          description: The order item that was added/updated
+        message:
+          type: string
+          example: "Item added to cart"
+
+  400:
+    description: Invalid request
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Missing 'product_id'"
+
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+

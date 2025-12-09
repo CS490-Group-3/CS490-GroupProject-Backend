@@ -1,0 +1,73 @@
+---
+tags:
+  - Products
+summary: Update a product
+description: >
+  Update product details. Only salon owners can update products for their salon.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: product_id
+    type: string
+    format: uuid
+    required: true
+    description: Product UUID
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "Hair Gel"
+        description:
+          type: string
+          example: "Premium styling gel"
+        price:
+          type: number
+          format: float
+          example: 15.99
+        category_id:
+          type: string
+          format: uuid
+        is_active:
+          type: boolean
+          example: true
+
+responses:
+  200:
+    description: Product updated successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Product updated successfully"
+        product:
+          type: object
+
+  400:
+    description: Validation error
+  403:
+    description: Forbidden - not the salon owner
+  404:
+    description: Product not found
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

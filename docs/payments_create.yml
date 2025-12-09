@@ -1,10 +1,9 @@
 ---
 tags:
   - Payments
-summary: Create appointment and process payment atomically
+summary: Create a payment for an existing appointment
 description: >
-  Creates an appointment and processes payment in a single transaction.
-  The appointment is only created if payment succeeds.
+  Creates a payment record for an appointment that was already created.
   Supports both saved payment methods and new card details.
   Can optionally redeem loyalty points for a discount.
 consumes:
@@ -24,35 +23,12 @@ parameters:
     required: true
     schema:
       type: object
-      required: [appointment]
+      required: [appointment_id]
       properties:
-        appointment:
-          type: object
-          required: [barber_id, service_id, salon_id, start_at, end_at]
-          properties:
-            barber_id:
-              type: string
-              format: uuid
-              example: "a1234567-89ab-cdef-0123-456789abcdef"
-            service_id:
-              type: string
-              format: uuid
-              example: "b1234567-89ab-cdef-0123-456789abcdef"
-            salon_id:
-              type: string
-              format: uuid
-              example: "c1234567-89ab-cdef-0123-456789abcdef"
-            start_at:
-              type: string
-              format: date-time
-              example: "2024-12-25T10:00:00Z"
-            end_at:
-              type: string
-              format: date-time
-              example: "2024-12-25T11:00:00Z"
-            notes:
-              type: string
-              example: "Please use clippers"
+        appointment_id:
+          type: string
+          format: uuid
+          example: "a1234567-89ab-cdef-0123-456789abcdef"
         payment_method_id:
           type: string
           format: uuid
@@ -109,15 +85,13 @@ parameters:
 
 responses:
   201:
-    description: Appointment created and payment processed successfully
+    description: Payment processed successfully
     schema:
       type: object
       properties:
         message:
           type: string
-          example: "Appointment created and payment processed successfully"
-        appointment:
-          type: object
+          example: "Payment processed successfully"
         payment:
           type: object
 
@@ -128,9 +102,11 @@ responses:
       properties:
         error:
           type: string
-          example: "Payment failed: Insufficient funds"
+          example: "Appointment not found"
 
   401:
     description: Unauthorized
   500:
     description: Server error
+
+
