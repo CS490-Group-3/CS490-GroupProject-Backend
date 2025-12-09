@@ -753,20 +753,22 @@ def add_service_provider():
     Add a new service provider to a salon.
     """
     try:
+        user = get_current_user()
+        owner_id = user.get("sub")  # Get the salon owner's ID (the person making the request)
+        
         json_data = request.get_json()
         if not json_data:
             return jsonify({"error": "Invalid JSON body"}), 400
         
         salon_id = json_data.get('salon_id')
-        user_id = json_data.get('user_id')
-        
+        user_id = json_data.get('user_id')  # This is the barber being added
         
         if not salon_id or not user_id:
             return jsonify({"error": "Missing required fields"}), 400
         bio = json_data.get('bio', '')
         years_experience = json_data.get('years_experience', 0)
         is_active = json_data.get('is_active', True)
-        result, error = SalonService.add_service_provider(salon_id, user_id, bio, years_experience, is_active, owner_id=user_id)
+        result, error = SalonService.add_service_provider(salon_id, user_id, bio, years_experience, is_active, owner_id=owner_id)
         
         if error:
             log_service_error(error)

@@ -398,7 +398,15 @@ class SalonService:
                 .maybe_single()\
                 .execute()
             
-            existing_barber = existing_response.data if existing_response.data else None
+            # Check if response is None or has an error BEFORE accessing .data
+            if existing_response is None:
+                existing_barber = None
+            elif getattr(existing_response, "error", None):
+                # Error occurred, treat as no existing barber
+                existing_barber = None
+            else:
+                # Safe to access .data now
+                existing_barber = existing_response.data if existing_response.data else None
             
             if existing_barber:
                 # Barber record exists - update it (rehiring case)
@@ -432,8 +440,16 @@ class SalonService:
                     .eq("id", barber_id)\
                     .execute()
                 
+                # Check if response is None or has an error BEFORE accessing .data
+                if update_response is None:
+                    return None, "Failed to update barber: No response from database"
+                
                 if getattr(update_response, "error", None):
                     return None, f"Failed to update barber: {update_response.error.message if hasattr(update_response.error, 'message') else str(update_response.error)}"
+                
+                # Verify update was successful (check if data exists)
+                if not hasattr(update_response, "data") or not update_response.data or len(update_response.data) == 0:
+                    return None, "Failed to update barber: No data returned from database"
                 
                 # Log audit
                 AuditLoggingService.log_audit(
@@ -460,10 +476,19 @@ class SalonService:
                     "is_active": is_active,
                 }
                 response = supabase.table("barbers").insert(barber_data).execute()
-                created_id = response.data[0]["id"] if response.data else None
+                
+                # Check if response is None or has an error BEFORE accessing .data
+                if response is None:
+                    return None, "Failed to create barber: No response from database"
                 
                 if getattr(response, "error", None):
                     return None, f"Failed to create barber: {response.error.message if hasattr(response.error, 'message') else str(response.error)}"
+                
+                # Now safe to access .data
+                if not hasattr(response, "data") or not response.data or len(response.data) == 0:
+                    return None, "Failed to create barber: No data returned from database"
+                
+                created_id = response.data[0]["id"]
                 
                 # Log audit
                 if created_id:
@@ -483,22 +508,35 @@ class SalonService:
                             .eq("salon_id", salon_id)
                             .execute()
                         )
-                        for row in hours_resp.data or []:
-                            if row.get("is_closed"):
-                                continue
-                            day = row.get("day_of_week")
-                            open_time = row.get("open_time")
-                            close_time = row.get("close_time")
-                            if day is None or not open_time or not close_time:
-                                continue
-                            # Best-effort: create availability; ignore errors such as duplicates
-                            ScheduleService.create_availability(
-                                barber_id=created_id,
-                                day_of_week=day,
-                                start_time=open_time,
-                                end_time=close_time,
-                                is_active=True,
+                        # Check if response is None or has an error BEFORE accessing .data
+                        if hours_resp is None:
+                            ErrorLoggingService.log_exception(
+                                Exception("Error fetching salon hours: No response from database"),
+                                severity='medium'
                             )
+                        elif getattr(hours_resp, "error", None):
+                            ErrorLoggingService.log_exception(
+                                Exception(f"Error fetching salon hours: {hours_resp.error}"),
+                                severity='medium'
+                            )
+                        else:
+                            # Safe to access .data now
+                            for row in (hours_resp.data or []):
+                                if row.get("is_closed"):
+                                    continue
+                                day = row.get("day_of_week")
+                                open_time = row.get("open_time")
+                                close_time = row.get("close_time")
+                                if day is None or not open_time or not close_time:
+                                    continue
+                                # Best-effort: create availability; ignore errors such as duplicates
+                                ScheduleService.create_availability(
+                                    barber_id=created_id,
+                                    day_of_week=day,
+                                    start_time=open_time,
+                                    end_time=close_time,
+                                    is_active=True,
+                                )
                     except Exception as e:
                         # Don't block adding the barber if availability seeding fails
                         ErrorLoggingService.log_exception(e, severity='medium')
