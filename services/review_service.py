@@ -171,6 +171,18 @@ class ReviewService:
                     pass 
         reviews = query.order("created_at", desc=True).execute().data
 
+        # Fetch user profiles for all reviews
+        user_ids = [r.get("user_id") for r in reviews if r.get("user_id")]
+        profiles = {}
+        if user_ids:
+            prof_resp = (
+                supabase.table("user_details")
+                .select("id,first_name,last_name")
+                .in_("id", user_ids)
+                .execute()
+            )
+            profiles = {row["id"]: row for row in (prof_resp.data or [])}
+
         # Fetch responses for all reviews
         if reviews:
             review_ids = [r["id"] for r in reviews]
@@ -182,9 +194,21 @@ class ReviewService:
             )
             responses = {r["review_id"]: r for r in (responses_resp.data or [])}
             
-            # Attach responses to reviews
+            # Attach responses and user info to reviews
             for review in reviews:
                 review["response"] = responses.get(review["id"])
+                # Add user information
+                user_id = review.get("user_id")
+                if user_id:
+                    profile = profiles.get(user_id, {})
+                    first_name = profile.get("first_name", "").strip()
+                    last_name = profile.get("last_name", "").strip()
+                    full_name = f"{first_name} {last_name}".strip()
+                    review["user"] = {
+                        "name": full_name if full_name else "Guest"
+                    }
+                else:
+                    review["user"] = {"name": "Guest"}
         
         return reviews
 
