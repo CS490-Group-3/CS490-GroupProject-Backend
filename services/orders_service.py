@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from models.orders import OrderCreateRequest, OrderResponse, OrderUpdateRequest, OrderItemCreateRequest, OrderItemUpdateRequest
 from services.error_logging_service import ErrorLoggingService
 from services.audit_logging_service import AuditLoggingService
+
 class OrdersService:
     @staticmethod
     def get_order_details(
@@ -57,6 +58,9 @@ class OrdersService:
             Tuple containing the created order dict or None, and an error message or None
         """
         try:
+            cart, error = OrdersService.get_active_cart(data.user_id, data.salon_id)
+            if error is None and cart:
+                return None, "An active cart already exists for this salon"
             response = supabase.table("orders").insert(data.dict()).execute()
             if response is None:
                 return None, "Database error: No response from database"
@@ -97,18 +101,113 @@ class OrdersService:
             data = response.data if hasattr(response, "data") else None
             print("Active cart query response data:", response)
             if not data:
-                print("No active cart found, creating a new one.")
-                cart,error = OrdersService.create_order(OrderCreateRequest(
-                    user_id=user_id, salon_id=salon_id))
-                print("New cart creation result:", cart, error)
-                if error:
-                    return None, error
-                return cart, None
+                return None, "No active cart found for this salon"
 
             return data[0], None
         except AuthApiError as auth_error:
             return None, f"Authentication error: {str(auth_error)}"
         except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def get_all_active_carts(user_id: str) -> Tuple[Optional[list], Optional[str]]:
+        """
+        Get all active carts (orders with status 'cart') for a user.
+
+        Args:
+            user_id: ID of the user
+
+        Returns:
+            Tuple containing a list of active cart order dicts or None, and an error message or None
+        """
+        try:
+            response = supabase.table("orders").select("*").eq("user_id", user_id).eq("order_status", "cart").execute()
+            data = response.data
+            print("All active carts query response data:", response)
+            if not data:
+                return None, "No active carts found"
+
+            return data, None
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def get_cart_items(order_id: str) -> Tuple[Optional[list], Optional[str]]:
+        """
+        Get items in a specific cart (order).
+
+        Args:
+            order_id: ID of the order (cart)
+
+        Returns:
+            Tuple containing a list of order item dicts or None, and an error message or None
+        """
+        try:
+            response = supabase.table("order_items").select("*").eq("order_id", order_id).execute()
+            data = response.data
+            print("Cart items query response data:", response)
+            if not data:
+                return None, "No items found in this cart"
+
+            return data, None
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def add_item_to_cart(
+        user_id: str,
+        order_id: str,
+        product_id: str,
+        quantity: int
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Add an item to a user's cart.
+
+        Args:
+            user_id: ID of the user
+            order_id: ID of the order (cart)
+            product_id: ID of the product to add
+            quantity: Quantity of the product to add
+
+        Returns:
+            Tuple containing the created order item dict or None, and an error message or None
+        """
+        try:
+            item_data = {
+                "order_id": order_id,
+                "product_id": product_id,
+                "quantity": quantity
+            }
+            product_data, error = ProductService.get_product(product_id)
+            if error:
+                return None, error
+            order_data, error = OrdersService.get_order_details(order_id)
+            if error:
+                return None, error
+            items, error = OrdersService.get_cart_items(order_id)
+            if items:
+                item_ids = [item["product_id"] for item in items]
+                if product_id in item_ids:
+                    return None, "Product already in cart. Please update the quantity instead."
+            if product_data.get("salon_id") != order_data.get("salon_id"):
+                return None, "Product does not belong to the same salon as the order"
+            if product_data.get("stock_quantity", 0) < quantity:
+                return None, "Insufficient product stock"
+            if order_data.get("order_status") != "cart":
+                return None, "Cannot add items to a non-cart order"
+            item_data["unit_price"] = product_data.get("price")
+            response = supabase.table("order_items").insert(item_data).execute()
+            if not response.data:
+                print("Add item to cart response data is empty:", response)
+                return None, "Failed to add item to cart"
+
+            created_item = response.data[0] if response.data else None
+            return created_item, None
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+
             return None, str(e)
     
     @staticmethod

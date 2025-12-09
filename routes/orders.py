@@ -10,6 +10,7 @@ from flasgger.utils import swag_from
 
 order_bp = Blueprint("order_bp", __name__, url_prefix="/api/orders")
 
+#-------------- Cart Routes ----#
 @order_bp.route("/cart", methods=["GET"])
 @auto_log_errors
 @login_required()
