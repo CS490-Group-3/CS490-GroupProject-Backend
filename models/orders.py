@@ -11,7 +11,7 @@ class OrderStatus(str, Enum):
     processing = "processing"
     shipped = "shipped"
     delivered = "delivered"
-    canceled = "canceled"
+    cancelled = "cancelled"
     
 class OrderBase(BaseModel):
     user_id: Optional[str] = None
@@ -53,6 +53,7 @@ class OrderResponse(BaseModel):
     notes: Optional[str]
     created_at: datetime
     updated_at: Optional[datetime]
+    items: Optional[list] = None  # Order items (only populated when fetching cart with items)
     model_config = ConfigDict(from_attributes=True)
     
 #--------Order Item Models--------#
