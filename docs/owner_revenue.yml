@@ -1,0 +1,107 @@
+---
+tags:
+  - Owner
+summary: Get revenue analytics for salon
+description: >
+  Get comprehensive revenue analytics for the salon owner's salon.
+  Includes total revenue, monthly breakdown, weekly revenue, revenue by type (appointments vs orders),
+  and average transaction amount.
+  Supports filtering by date range.
+  Only salon owners and admins can access this.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: query
+    name: start_date
+    type: string
+    format: date-time
+    required: false
+    description: Start date for filtering (ISO 8601 format)
+    example: "2024-01-01T00:00:00Z"
+
+  - in: query
+    name: end_date
+    type: string
+    format: date-time
+    required: false
+    description: End date for filtering (ISO 8601 format)
+    example: "2024-12-31T23:59:59Z"
+
+responses:
+  200:
+    description: Revenue analytics for the salon
+    schema:
+      type: object
+      properties:
+        total_revenue:
+          type: number
+          description: Total revenue in the period
+          example: 12500.50
+        total_payments:
+          type: integer
+          description: Total number of completed payments
+          example: 150
+        average_transaction:
+          type: number
+          description: Average transaction amount
+          example: 83.34
+        monthly_breakdown:
+          type: array
+          description: Monthly revenue breakdown
+          items:
+            type: object
+            properties:
+              month:
+                type: string
+                format: YYYY-MM
+                example: "2024-01"
+              revenue:
+                type: number
+                example: 3500.00
+              count:
+                type: integer
+                example: 45
+              average:
+                type: number
+                example: 77.78
+        weekly_revenue:
+          type: number
+          description: Revenue in the past 7 days
+          example: 850.00
+        revenue_by_type:
+          type: object
+          properties:
+            appointments:
+              type: number
+              description: Revenue from appointments
+              example: 8000.00
+            orders:
+              type: number
+              description: Revenue from product orders
+              example: 4500.50
+        date_range:
+          type: object
+          properties:
+            start:
+              type: string
+              nullable: true
+            end:
+              type: string
+              nullable: true
+
+  404:
+    description: Salon not found
+  401:
+    description: Unauthorized
+  403:
+    description: Forbidden - not a salon owner
+  500:
+    description: Server error
+

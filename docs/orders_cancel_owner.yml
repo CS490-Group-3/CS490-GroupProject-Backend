@@ -1,0 +1,68 @@
+summary: Cancel order (owner only)
+tags:
+  - Orders
+parameters:
+  - name: order_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+    description: Order ID to cancel
+requestBody:
+  required: true
+  content:
+    application/json:
+      schema:
+        type: object
+        required:
+          - reason
+        properties:
+          reason:
+            type: string
+            description: Cancellation reason (required)
+            example: "Customer requested cancellation"
+responses:
+  '200':
+    description: Order cancelled successfully
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            order:
+              $ref: '#/components/schemas/Order'
+            message:
+              type: string
+              example: "Order cancelled successfully. Payment refunded and loyalty points removed."
+  '400':
+    description: Bad request
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "Cancellation reason is required"
+  '403':
+    description: Unauthorized
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "Unauthorized: You don't own this salon"
+  '404':
+    description: Order not found
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "Order not found"
+

@@ -9,6 +9,8 @@ from services.analytics_service import AnalyticsService
 from services.export_service import ExportService
 from services.error_logging_service import ErrorLoggingService
 from services.audit_logging_service import AuditLoggingService
+from services.payment_service import PaymentService
+from services.loyalty_service import LoyaltyService
 from middleware import role_required
 from middleware.error_logging import auto_log_errors, log_route_error, log_service_error
 from datetime import datetime, date
@@ -16,6 +18,8 @@ from typing import Optional
 import os
 import jwt
 import json
+import csv
+import io
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
@@ -208,6 +212,132 @@ def get_revenue_metrics():
         return jsonify({"error": str(e)}), 500
 
 
+@admin_bp.route('/revenue/analytics', methods=['GET'])
+@auto_log_errors
+@role_required(['admin'], verify_with_supabase=True)
+@swag_from("../docs/admin_revenue_analytics.yml")
+def get_all_salons_revenue():
+    """
+    Get comprehensive revenue analytics for all salons.
+    Query params: start_date (optional), end_date (optional)
+    """
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        analytics, error = PaymentService.get_all_salons_revenue_analytics(
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        if error:
+            log_service_error(error)
+            return jsonify({"error": error}), 400
+        
+        return jsonify(analytics), 200
+        
+    except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
+
+
+@admin_bp.route('/revenue/analytics/export/csv', methods=['GET'])
+@auto_log_errors
+@role_required(['admin'], verify_with_supabase=True)
+@swag_from("../docs/admin_revenue_analytics_export_csv.yml")
+def export_revenue_analytics_csv():
+    """
+    Export revenue analytics to CSV format.
+    Query params: start_date (optional), end_date (optional)
+    """
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        analytics, error = PaymentService.get_all_salons_revenue_analytics(
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        if error:
+            return jsonify({"error": error}), 400
+        
+        # Convert analytics to CSV format - single clean table
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Create a single clean table with salon-level detail
+        # This is the most useful format for analytics tools
+        writer.writerow([
+            "Salon ID",
+            "Salon Name", 
+            "Revenue",
+            "Transaction Count",
+            "Average Transaction"
+        ])
+        
+        # Data rows - one per salon
+        salon_breakdown = analytics.get('salon_breakdown', [])
+        if salon_breakdown:
+            for salon in salon_breakdown:
+                writer.writerow([
+                    salon.get('salon_id', ''),
+                    salon.get('salon_name', 'N/A'),
+                    f"{salon.get('revenue', 0):.2f}",
+                    str(salon.get('count', 0)),
+                    f"{salon.get('average', 0):.2f}"
+                ])
+        else:
+            # If no salon data, write empty row
+            writer.writerow(['', 'No data available', '0.00', '0', '0.00'])
+        
+        csv_string = output.getvalue()
+        output.close()
+        
+        filename = f"revenue_analytics_{datetime.now().strftime('%Y-%m-%d')}.csv"
+        
+        return Response(
+            csv_string,
+            mimetype='text/csv',
+            headers={
+                'Content-Disposition': f'attachment; filename={filename}'
+            }
+        )
+        
+    except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
+
+
+@admin_bp.route('/loyalty/usage', methods=['GET'])
+@auto_log_errors
+@role_required(['admin'], verify_with_supabase=True)
+@swag_from("../docs/admin_loyalty_usage.yml")
+def get_loyalty_usage():
+    """
+    Get loyalty program usage statistics across all salons.
+    Query params: start_date (optional), end_date (optional)
+    """
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        usage_stats, error = LoyaltyService.get_loyalty_usage_analytics(
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        if error:
+            log_service_error(error)
+            return jsonify({"error": error}), 400
+        
+        return jsonify(usage_stats), 200
+        
+    except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
+
+
 @admin_bp.route('/error-logs', methods=['GET'])
 @auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
@@ -381,6 +511,7 @@ def get_loyalty_metrics():
 @admin_bp.route('/daily-statistics/export/csv', methods=['GET'])
 @auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
+@swag_from("../docs/admin_daily_statistics_export_csv.yml")
 def export_daily_statistics_csv():
     """
     Export daily statistics rows as a CSV table for a date range.
@@ -599,6 +730,7 @@ def calculate_daily_statistics():
 @admin_bp.route('/daily-statistics', methods=['GET'])
 @auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
+@swag_from("../docs/admin_daily_statistics.yml")
 def get_daily_statistics():
     """
     Get raw daily statistics rows for a date range.
@@ -708,6 +840,7 @@ def export_metrics_csv(metrics_type: str):
 @admin_bp.route('/error-logs/export/csv', methods=['GET'])
 @auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
+@swag_from("../docs/admin_error_logs_export_csv.yml")
 def export_error_logs_csv():
     """
     Export error logs to CSV.
@@ -758,6 +891,7 @@ def export_error_logs_csv():
 @admin_bp.route('/audit-logs/export/csv', methods=['GET'])
 @auto_log_errors
 @role_required(['admin'], verify_with_supabase=True)
+@swag_from("../docs/admin_audit_logs_export_csv.yml")
 def export_audit_logs_csv():
     """
     Export audit logs to CSV.

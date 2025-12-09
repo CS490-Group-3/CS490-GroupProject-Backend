@@ -1,0 +1,43 @@
+---
+tags:
+  - Admin
+summary: Export daily statistics to CSV
+description: >
+  Export daily statistics data to CSV format for download.
+  Returns a CSV table with daily metrics including appointments, customers,
+  revenue, ratings, and loyalty points for the specified date range.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+  - in: query
+    name: start_date
+    required: true
+    schema:
+      type: string
+      format: date
+    description: Start date (YYYY-MM-DD)
+    example: "2024-01-01"
+  - in: query
+    name: end_date
+    required: true
+    schema:
+      type: string
+      format: date
+    description: End date (YYYY-MM-DD)
+    example: "2024-01-31"
+responses:
+  200:
+    description: CSV file download
+    schema:
+      type: file
+  400:
+    description: Bad request - missing or invalid date parameters
+  403:
+    description: Forbidden
+  500:
+    description: Internal server error
+

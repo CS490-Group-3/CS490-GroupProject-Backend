@@ -1,0 +1,67 @@
+---
+tags:
+  - Services
+summary: Create a new service for a salon
+description: >
+  Create a new service for a salon. Requires salon_owner role.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required:
+        - salon_id
+        - name
+        - duration_minutes
+        - price
+      properties:
+        salon_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        name:
+          type: string
+          example: "Haircut"
+        description:
+          type: string
+          example: "Professional haircut service"
+        duration_minutes:
+          type: integer
+          example: 30
+        price:
+          type: number
+          format: float
+          example: 25.00
+        is_active:
+          type: boolean
+          default: true
+          example: true
+responses:
+  201:
+    description: Service created successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Service created successfully"
+  400:
+    description: Bad request - invalid or missing data
+  401:
+    description: Unauthorized
+  403:
+    description: Forbidden - not a salon owner
+  500:
+    description: Internal server error
+

@@ -1,0 +1,98 @@
+---
+tags:
+  - Payment Methods
+summary: Save a new payment method
+description: >
+  Save a credit/debit card for future use.
+  The card can be set as default.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required: [card_number, exp_month, exp_year, cvv]
+      properties:
+        card_number:
+          type: string
+          description: Full card number
+          example: "4111111111111111"
+        exp_month:
+          type: integer
+          description: Expiration month (1-12)
+          example: 12
+        exp_year:
+          type: integer
+          description: Expiration year
+          example: 2025
+        cvv:
+          type: string
+          description: CVV code
+          example: "123"
+        cardholder_name:
+          type: string
+          example: "John Doe"
+        billing_address:
+          type: object
+          properties:
+            line1:
+              type: string
+              example: "123 Main St"
+            line2:
+              type: string
+              example: ""
+            city:
+              type: string
+              example: "New York"
+            state:
+              type: string
+              example: "NY"
+            zip:
+              type: string
+              example: "10001"
+            country:
+              type: string
+              example: "US"
+        is_default:
+          type: boolean
+          description: Set as default payment method
+          default: false
+
+responses:
+  201:
+    description: Payment method saved successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Payment method saved successfully"
+        payment_method:
+          type: object
+
+  400:
+    description: Validation error
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "card_number is required"
+
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

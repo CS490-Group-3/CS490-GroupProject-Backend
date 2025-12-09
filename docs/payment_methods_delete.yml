@@ -1,0 +1,50 @@
+---
+tags:
+  - Payment Methods
+summary: Delete a saved payment method
+description: >
+  Soft delete a saved payment method.
+  The method is marked as deleted but not removed from the database.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: payment_method_id
+    type: string
+    format: uuid
+    required: true
+    description: Payment method UUID
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+responses:
+  200:
+    description: Payment method deleted successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Payment method deleted successfully"
+
+  400:
+    description: Invalid payment method or operation failed
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Failed to delete payment method"
+
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

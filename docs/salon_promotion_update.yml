@@ -1,0 +1,66 @@
+---
+tags:
+  - Salon Promotions
+summary: "Update or delete a promotional offer"
+description: >
+  Allows **salon owners** or **admins** to update or delete an existing promotional offer.
+  PATCH: Update promotion fields (title, description, dates, discount, etc.)
+  DELETE: Delete a promotion
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: "The UUID of the salon."
+  - in: path
+    name: promotion_id
+    type: string
+    format: uuid
+    required: true
+    description: "The UUID of the promotion."
+  - in: header
+    name: Authorization
+    description: "Bearer access token (owner or admin)"
+    required: true
+    type: string
+  - in: body
+    name: body
+    required: true
+    description: "Update data (for PATCH only)"
+    schema:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        discount_type:
+          type: string
+          enum: [percentage]
+        discount_value:
+          type: number
+        min_purchase_amount:
+          type: number
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          type: string
+          format: date-time
+        is_active:
+          type: boolean
+responses:
+  200:
+    description: "Promotion updated/deleted successfully."
+  400:
+    description: "Bad request"
+  404:
+    description: "Promotion not found"
+  500:
+    description: "Server error"
+

@@ -1,0 +1,46 @@
+---
+tags:
+  - Products
+summary: List all product categories
+description: >
+  Get all available product categories.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+responses:
+  200:
+    description: List of product categories
+    schema:
+      type: object
+      properties:
+        categories:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              description:
+                type: string
+              parent_category_id:
+                type: string
+                format: uuid
+
+  400:
+    description: Error retrieving categories
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

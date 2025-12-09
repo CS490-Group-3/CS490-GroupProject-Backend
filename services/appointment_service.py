@@ -49,11 +49,14 @@ class AppointmentService:
         # helper method to get specific barber
         response = (
             supabase.table("barbers")
-            .select("id,salon_id")
+            .select("id,salon_id,is_active")
             .eq("id", barber_id).single().execute()
         )
         if getattr(response, "error", None) or not response.data:
             return None, "Barber not found"
+        # Check if barber is active
+        if not response.data.get("is_active", True):
+            return None, "Barber is not active"
         return response.data, None
     
     @staticmethod
@@ -264,7 +267,7 @@ class AppointmentService:
         if appointment_ids:
             rev_resp = (
                 supabase.table("reviews")
-                .select("appointment_id,rating,comment,id")
+                .select("appointment_id,rating,comment,id,user_id")
                 .in_("appointment_id", appointment_ids)
                 .execute()
             )
@@ -279,16 +282,87 @@ class AppointmentService:
                 )
                 responses_map = {r["review_id"]: r for r in (responses_resp.data or [])}
             
+            # Fetch review images and generate signed URLs
+            images_map = {}
+            if review_ids:
+                try:
+                    images_resp = (
+                        supabase.table("review_images")
+                        .select("*")
+                        .in_("review_id", review_ids)
+                        .execute()
+                    )
+                    if images_resp.data:
+                        from datetime import timedelta
+                        for img in images_resp.data:
+                            review_id = img.get("review_id")
+                            if review_id:
+                                # Generate signed URL if file_url exists
+                                file_url = img.get("file_url")
+                                if file_url and not img.get("signed_url"):
+                                    try:
+                                        signed_resp = supabase.storage.from_("review-images").create_signed_url(
+                                            file_url,
+                                            int(timedelta(days=7).total_seconds())
+                                        )
+                                        if signed_resp and not (hasattr(signed_resp, 'error') and signed_resp.error):
+                                            img["signed_url"] = signed_resp.get("signedURL") or signed_resp.get("signed_url")
+                                    except Exception:
+                                        # If signed URL generation fails, continue without it
+                                        pass
+                                
+                                if review_id not in images_map:
+                                    images_map[review_id] = []
+                                images_map[review_id].append(img)
+                except Exception:
+                    # If review_images table doesn't exist or error, continue without images
+                    pass
+            
+            # Fetch user profiles for reviews
+            review_user_ids = [row.get("user_id") for row in (rev_resp.data or []) if row.get("user_id")]
+            review_profiles = {}
+            if review_user_ids:
+                try:
+                    prof_resp = (
+                        supabase.table("user_details")
+                        .select("id,first_name,last_name")
+                        .in_("id", review_user_ids)
+                        .execute()
+                    )
+                    if prof_resp.data:
+                        review_profiles = {row["id"]: row for row in prof_resp.data}
+                except Exception:
+                    pass
+            
             for row in rev_resp.data or []:
+                review_id = row.get("id")
+                user_id = row.get("user_id")
+                
+                # Get user name
+                user_name = "Guest"
+                if user_id and user_id in review_profiles:
+                    profile = review_profiles[user_id]
+                    first_name = profile.get("first_name", "").strip()
+                    last_name = profile.get("last_name", "").strip()
+                    full_name = f"{first_name} {last_name}".strip()
+                    if full_name:
+                        user_name = full_name
+                
                 review_data = {
-                    "id": row.get("id"),
+                    "id": review_id,
                     "stars": row.get("rating"),
                     "text": row.get("comment"),
                     "rating": row.get("rating"),
+                    "user": {
+                        "name": user_name
+                    }
                 }
                 # Attach response if it exists
-                if row.get("id") in responses_map:
-                    review_data["response"] = responses_map[row.get("id")]
+                if review_id in responses_map:
+                    review_data["response"] = responses_map[review_id]
+                # Attach images if they exist
+                if review_id in images_map:
+                    review_data["images"] = images_map[review_id]
                 reviews_map[row["appointment_id"]] = review_data
 
         customers = {}
@@ -353,9 +427,54 @@ class AppointmentService:
             enriched["barber_running_late"] = running_late_map.get(row.get("id"), False)
             # Add payment information
             payment_info = payments.get(row.get("id"))
+            enriched["loyalty_points_earned"] = 0
+            enriched["loyalty_points_pending"] = 0
+            
             if payment_info:
                 enriched["payment"] = payment_info
                 enriched["payment_status"] = payment_info.get("payment_status")
+                
+                # Get loyalty points earned for this appointment (if completed)
+                payment_id = payment_info.get("id")
+                if payment_id:
+                    try:
+                        from services.loyalty_service import LoyaltyService
+                        loyalty_trans_response = supabase.table("loyalty_transactions")\
+                            .select("id, points, transaction_type, description")\
+                            .eq("payment_id", payment_id)\
+                            .eq("transaction_type", "earned")\
+                            .execute()
+                        
+                        if loyalty_trans_response and not getattr(loyalty_trans_response, "error", None):
+                            transactions = loyalty_trans_response.data or []
+                            points_earned = sum([t.get("points", 0) for t in transactions if t.get("points", 0) > 0])
+                            enriched["loyalty_points_earned"] = points_earned
+                    except Exception:
+                        pass
+                
+                # Calculate pending points for scheduled appointments (not completed yet)
+                if row.get("status") in ["scheduled", "confirmed"] and payment_info.get("payment_status") == "completed":
+                    try:
+                        salon_id = row.get("salon_id")
+                        payment_amount = float(payment_info.get("amount", 0))
+                        if salon_id and payment_amount > 0:
+                            points_pending, _ = LoyaltyService.calculate_potential_points(payment_amount, salon_id)
+                            enriched["loyalty_points_pending"] = points_pending
+                    except Exception:
+                        pass
+            elif row.get("status") in ["scheduled", "confirmed"]:
+                # Calculate pending points even if no payment info yet (for display purposes)
+                try:
+                    from services.loyalty_service import LoyaltyService
+                    salon_id = row.get("salon_id")
+                    service = services.get(row.get("service_id"))
+                    if service and service.get("price"):
+                        payment_amount = float(service.get("price", 0))
+                        if salon_id and payment_amount > 0:
+                            points_pending, _ = LoyaltyService.calculate_potential_points(payment_amount, salon_id)
+                            enriched["loyalty_points_pending"] = points_pending
+                except Exception:
+                    pass
             else:
                 enriched["payment"] = None
                 enriched["payment_status"] = None
@@ -662,7 +781,8 @@ class AppointmentService:
                             .eq("id", balance["id"])\
                             .execute()
                         
-                        # Create expired transaction record
+                        # Create reversal transaction record
+                        # Use "expired" type with negative points to indicate points removed
                         transaction_data = {
                             "id": str(uuid.uuid4()),
                             "user_id": user_id,
@@ -670,6 +790,7 @@ class AppointmentService:
                             "transaction_type": "expired",
                             "points": -points,  # Negative to show deduction
                             "appointment_id": appointment_id,
+                            "balance_after": new_balance,
                             "description": f"Points removed due to appointment cancellation"
                         }
                         supabase.table("loyalty_transactions")\
@@ -733,9 +854,11 @@ class AppointmentService:
             
             new_start_at, new_end_at = s_iso, e_iso
 
-            barber = supabase.table("barbers").select("salon_id").eq("id", barber_id).single().execute()
+            barber = supabase.table("barbers").select("salon_id,is_active").eq("id", barber_id).single().execute()
             if getattr(barber,"error",None) or not barber.data or str(barber.data["salon_id"]) != str(salon_id):
                 return None, "Barber must belong to the specified salon"
+            if not barber.data.get("is_active", True):
+                return None, "Barber is not active"
 
             # validate availability
             ok, msg = AppointmentService.is_barber_available(salon_id, barber_id, new_start_at, new_end_at)
@@ -867,8 +990,10 @@ class AppointmentService:
         if getattr(response, "error", None) or not response.data:
             return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Update failed"
         
-        # Note: Loyalty points are now awarded when payment is completed, not when appointment is completed
-        # This was moved to the payment processing flow
+        # Award loyalty points when appointment is marked as completed
+        if status == "completed":
+            from services.loyalty_service import LoyaltyService
+            LoyaltyService.award_points_for_completed_appointment(appointment_id)
         
         return AppointmentService.get_by_id(appointment_id, user=user)
 
@@ -1055,80 +1180,145 @@ class AppointmentService:
                                      when: str = "all",
                                      status=None,
                                      page: int = 1,
-                                     limit: int = 20):
+                                     limit: int = 100,
+                                     sort_order: str = "asc"):
         # fetches all appointments for a specific customer (supports upcoming/past/all)
         try:
+            # Get total count first (without pagination)
+            # For past appointments, exclude cancelled from count
+            count_query = (
+                supabase.table("appointments")
+                .select("id", count="exact")
+                .eq("customer_id", customer_id)
+            )
+            count_query = AppointmentService._apply_filters(count_query, when, status)
+            # Exclude cancelled appointments from past count
+            if when == "past":
+                count_query = count_query.neq("status", "cancelled")
+            count_response = count_query.execute()
+            total_count = count_response.count if hasattr(count_response, "count") else 0
+            
+            # Get paginated data
             query = (
-                        supabase.table("appointments")
-                        .select("*")
-                        .eq("customer_id", customer_id)
-                        .order("start_at", desc=False)
+                supabase.table("appointments")
+                .select("*")
+                .eq("customer_id", customer_id)
             )
             query = AppointmentService._apply_filters(query, when, status)
+            
+            # For upcoming: always closest first (ascending). For past: use sort_order
+            if when == "upcoming":
+                query = query.order("start_at", desc=False)  # Closest first
+            else:
+                query = query.order("start_at", desc=(sort_order.lower() == "desc"))
+            
             query = AppointmentService._paginate(query, page, limit)
             response = query.execute()
             if getattr(response, "error", None):
-                return None, response.error.message
+                return None, response.error.message, 0
             data = AppointmentService._hydrate_appointments(response.data or [])
-            return data, None
+            return data, None, total_count
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
-            return None, str(e)
+            return None, str(e), 0
         
     @staticmethod
     def get_appointments_by_barber(barber_id: str, 
                                    when: str = "all",
                                    status=None,
                                    page: int = 1,
-                                   limit: int = 20):
+                                   limit: int = 100,
+                                   sort_order: str = "asc"):
         # fetches all appointments for a specific barber (supports upcoming/past/all)
         try:
-            now_iso = datetime.now(timezone.utc).isoformat()
+            # Get total count first
+            count_query = (
+                supabase.table("appointments")
+                .select("id", count="exact")
+                .eq("barber_id", barber_id)
+            )
+            count_query = AppointmentService._apply_filters(count_query, when, status)
+            # Exclude cancelled appointments from past count
+            if when == "past":
+                count_query = count_query.neq("status", "cancelled")
+            count_response = count_query.execute()
+            total_count = count_response.count if hasattr(count_response, "count") else 0
+            
+            # Get paginated data
             query = (
                 supabase.table("appointments")
                 .select("*")
                 .eq("barber_id", barber_id)
-                .order("start_at", desc=False)
             )
             query = AppointmentService._apply_filters(query, when, status)
+            # Exclude cancelled appointments from past results
+            if when == "past":
+                query = query.neq("status", "cancelled")
+            
+            # For upcoming: always closest first (ascending). For past: use sort_order
+            if when == "upcoming":
+                query = query.order("start_at", desc=False)  # Closest first
+            else:
+                query = query.order("start_at", desc=(sort_order.lower() == "desc"))
+            
             query = AppointmentService._paginate(query, page, limit)
             response = query.execute()
             if getattr(response, "error", None):
-                return None, response.error.message
+                return None, response.error.message, 0
             data = AppointmentService._hydrate_appointments(response.data or [])
-            return data, None
+            return data, None, total_count
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
-            return None, str(e)
+            return None, str(e), 0
         
     @staticmethod
     def get_all_salon_appointments(salon_ids: List[str], 
                                    when: str = "all",
                                    status=None,
                                    page: int = 1,
-                                   limit: int = 20,
-                                   customer_id: Optional[str] = None):
+                                   limit: int = 100,
+                                   customer_id: Optional[str] = None,
+                                   sort_order: str = "asc"):
         # fetches all appointments for a salon (supports upcoming/past/all)
         # If customer_id is provided, filters by customer
         try:
+            # Get total count first
+            count_query = (
+                supabase.table("appointments")
+                .select("id", count="exact")
+                .in_("salon_id", salon_ids)
+            )
+            if customer_id:
+                count_query = count_query.eq("customer_id", customer_id)
+            count_query = AppointmentService._apply_filters(count_query, when, status)
+            count_response = count_query.execute()
+            total_count = count_response.count if hasattr(count_response, "count") else 0
+            
+            # Get paginated data
             query = (
                 supabase.table("appointments")
                 .select("*")
                 .in_("salon_id", salon_ids)
-                .order("start_at", desc=False)
             )
             if customer_id:
                 query = query.eq("customer_id", customer_id)
             query = AppointmentService._apply_filters(query, when, status)
+            
+            # For upcoming: always closest first (ascending). For past: use sort_order
+            if when == "upcoming":
+                query = query.order("start_at", desc=False)  # Closest first
+            else:
+                query = query.order("start_at", desc=(sort_order.lower() == "desc"))
+            
             query = AppointmentService._paginate(query, page, limit)
             response = query.execute()
             if getattr(response, "error", None):
-                return None, response.error.message
+                return None, response.error.message, 0
             data = AppointmentService._hydrate_appointments(response.data or [])
-            return data, None
+            return data, None, total_count
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
-            return None, str(e)
+            return None, str(e), 0
 
     
     @staticmethod
@@ -1138,19 +1328,44 @@ class AppointmentService:
                            when="all", 
                            status=None, 
                            page=1, 
-                           limit=20):
+                           limit=100,
+                           sort_order: str = "asc"):
         """Admin-level query with optional filters."""
-        query = supabase.table("appointments").select("*").order("start_at", desc=False)
-        if salon_id:
-            query = query.eq("salon_id", salon_id)
-        if barber_id:
-            query = query.eq("barber_id", barber_id)
-        if customer_id:
-            query = query.eq("customer_id", customer_id)
-        query = AppointmentService._apply_filters(query, when, status)
-        query = AppointmentService._paginate(query, page, limit)
-        response = query.execute()
-        if getattr(response,"error",None):
-            return None, response.error.message
-        data = AppointmentService._hydrate_appointments(response.data or [])
-        return data, None
+        try:
+            # Get total count first
+            count_query = supabase.table("appointments").select("id", count="exact")
+            if salon_id:
+                count_query = count_query.eq("salon_id", salon_id)
+            if barber_id:
+                count_query = count_query.eq("barber_id", barber_id)
+            if customer_id:
+                count_query = count_query.eq("customer_id", customer_id)
+            count_query = AppointmentService._apply_filters(count_query, when, status)
+            count_response = count_query.execute()
+            total_count = count_response.count if hasattr(count_response, "count") else 0
+            
+            # Get paginated data
+            query = supabase.table("appointments").select("*")
+            if salon_id:
+                query = query.eq("salon_id", salon_id)
+            if barber_id:
+                query = query.eq("barber_id", barber_id)
+            if customer_id:
+                query = query.eq("customer_id", customer_id)
+            query = AppointmentService._apply_filters(query, when, status)
+            
+            # For upcoming: always closest first (ascending). For past: use sort_order
+            if when == "upcoming":
+                query = query.order("start_at", desc=False)  # Closest first
+            else:
+                query = query.order("start_at", desc=(sort_order.lower() == "desc"))
+            
+            query = AppointmentService._paginate(query, page, limit)
+            response = query.execute()
+            if getattr(response, "error", None):
+                return None, response.error.message, 0
+            data = AppointmentService._hydrate_appointments(response.data or [])
+            return data, None, total_count
+        except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
+            return None, str(e), 0

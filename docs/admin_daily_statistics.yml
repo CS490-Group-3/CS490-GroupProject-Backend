@@ -1,0 +1,53 @@
+---
+tags:
+  - Admin
+summary: Get daily statistics
+description: >
+  Get raw daily statistics rows for a date range.
+  Returns platform-wide daily statistics including appointments, customers,
+  revenue, ratings, and loyalty points.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+  - in: query
+    name: start_date
+    required: true
+    schema:
+      type: string
+      format: date
+    description: Start date (YYYY-MM-DD)
+    example: "2024-01-01"
+  - in: query
+    name: end_date
+    required: true
+    schema:
+      type: string
+      format: date
+    description: End date (YYYY-MM-DD)
+    example: "2024-01-31"
+responses:
+  200:
+    description: Daily statistics retrieved successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+        daily_statistics:
+          type: object
+          properties:
+            rows:
+              type: array
+              items:
+                type: object
+  400:
+    description: Bad request - missing or invalid date parameters
+  403:
+    description: Forbidden
+  500:
+    description: Internal server error
+

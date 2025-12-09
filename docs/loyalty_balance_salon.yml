@@ -1,0 +1,57 @@
+---
+tags:
+  - Loyalty
+summary: Get loyalty point balance for a specific salon
+description: >
+  Get loyalty point balance for the authenticated user at a specific salon.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon UUID
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+responses:
+  200:
+    description: Loyalty balance for the salon
+    schema:
+      type: object
+      properties:
+        balance:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            user_id:
+              type: string
+              format: uuid
+            salon_id:
+              type: string
+              format: uuid
+            points_balance:
+              type: integer
+            lifetime_points_earned:
+              type: integer
+            lifetime_points_redeemed:
+              type: integer
+
+  400:
+    description: Error retrieving balance
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

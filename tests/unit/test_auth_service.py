@@ -274,15 +274,31 @@ def test_update_user_profile_success(monkeypatch):
             "last_name": "Doe"
         }
     
+    class MockUpdatedProfileResponse:
+        data = [{
+            "id": "user-123",
+            "email": "test@example.com",
+            "first_name": "Jane",
+            "last_name": "Smith",
+            "phone": "555-9999",
+            "role": "customer"
+        }]
+    
+    call_count = [0]
+    
     class MockChain:
-        def __init__(self):
+        def __init__(self, table_name):
+            self.table_name = table_name
             self._is_select = False
+            self._is_update = False
+            self._is_maybe_single = False
         
         def select(self, *args):
             self._is_select = True
             return self
         
         def update(self, data):
+            self._is_update = True
             self.update_data = data
             return self
         
@@ -290,15 +306,30 @@ def test_update_user_profile_success(monkeypatch):
             return self
         
         def maybe_single(self):
+            self._is_maybe_single = True
             return self
         
         def execute(self):
-            if self._is_select:
-                return MockOldProfileResponse()
-            return MockUpdateResponse()
+            from unittest.mock import Mock
+            call_count[0] += 1
+            mock_response = Mock()
+            mock_response.error = None
+            
+            if self.table_name == "user_profiles":
+                if self._is_select and self._is_maybe_single:
+                    # First call: get old values
+                    mock_response.data = MockOldProfileResponse().data
+                elif self._is_update:
+                    # Second call: update
+                    mock_response.data = MockUpdateResponse().data
+            elif self.table_name == "user_details":
+                # Third call: get_user_profile after update
+                mock_response.data = MockUpdatedProfileResponse().data
+            
+            return mock_response
     
     def fake_table(name):
-        return MockChain()
+        return MockChain(name)
     
     monkeypatch.setattr("config.supabase.table", fake_table)
     

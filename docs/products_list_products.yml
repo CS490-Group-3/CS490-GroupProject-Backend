@@ -9,22 +9,24 @@ parameters:
     required: true
     schema:
       type: string
-  - in: body
-    name: body
+  - in: query
+    name: salon_id
     required: true
     schema:
-      type: object
-      properties:
-        salon_id:
-          type: string
-          format: uuid
-          example: "123e4567-e89b-12d3-a456-426614174000"
-        category_id:
-          type: array
-          items:
-            type: string
-            format: uuid
-          example: ["123e4567-e89b-12d3-a456-426614174001"]
+      type: string
+      format: uuid
+    description: Salon ID
+    example: "123e4567-e89b-12d3-a456-426614174000"
+  - in: query
+    name: category_id
+    required: false
+    schema:
+      type: array
+      items:
+        type: string
+        format: uuid
+    description: Filter by category IDs (can specify multiple)
+    example: ["123e4567-e89b-12d3-a456-426614174001"]
 responses:
   200:
     description: Products retrieved successfully

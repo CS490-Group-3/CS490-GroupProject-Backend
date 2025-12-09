@@ -213,15 +213,28 @@ def update_pending_application(salon_id):
 
 
 
-@salon_bp.route('/<uuid:salon_id>/promotions', methods=['POST'])
+@salon_bp.route('/<uuid:salon_id>/promotions', methods=['GET', 'POST'])
 @auto_log_errors
 @login_required()
 @role_required(['salon_owner', 'admin'])
 @swag_from("../docs/salon_promotions.yml")
-def create_promotional_offer(salon_id):
+def manage_promotions(salon_id):
     """
-    Create a promotional offer for a salon (owner or admin).
+    GET: List all promotional offers for a salon.
+    POST: Create a promotional offer for a salon (owner or admin).
     """
+    if request.method == 'GET':
+        try:
+            promotions, error = PromotionService.get_salon_promotions(salon_id)
+            if error:
+                log_service_error(error)
+                return jsonify({"error": error}), 400
+            return jsonify({"promotions": promotions}), 200
+        except Exception as e:
+            log_route_error(e)
+            return jsonify({"error": str(e)}), 500
+    
+    # POST
     data = request.get_json()
     if not data:
         return jsonify({"error": "Missing JSON body"}), 400
@@ -232,6 +245,66 @@ def create_promotional_offer(salon_id):
     except Exception as e:
         import traceback
         traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@salon_bp.route('/<uuid:salon_id>/promotions/<uuid:promotion_id>', methods=['PATCH', 'DELETE'])
+@auto_log_errors
+@login_required()
+@role_required(['salon_owner', 'admin'])
+@swag_from("../docs/salon_promotion_update.yml")
+def update_or_delete_promotion(salon_id, promotion_id):
+    """
+    PATCH: Update a promotional offer.
+    DELETE: Delete a promotional offer.
+    """
+    if request.method == 'PATCH':
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing JSON body"}), 400
+        
+        try:
+            promotion, error = PromotionService.update_promotion(promotion_id, salon_id, data)
+            if error:
+                log_service_error(error)
+                return jsonify({"error": error}), 400
+            return jsonify({"promotion": promotion}), 200
+        except Exception as e:
+            log_route_error(e)
+            return jsonify({"error": str(e)}), 500
+    
+    # DELETE
+    try:
+        success, error = PromotionService.delete_promotion(promotion_id, salon_id)
+        if error:
+            log_service_error(error)
+            return jsonify({"error": error}), 400
+        return jsonify({"message": "Promotion deleted successfully"}), 200
+    except Exception as e:
+        log_route_error(e)
+        return jsonify({"error": str(e)}), 500
+
+
+@salon_bp.route('/<uuid:salon_id>/promotions/active', methods=['GET'])
+@auto_log_errors
+@login_required()
+@swag_from("../docs/salon_promotions_active.yml")
+def get_active_promotions(salon_id):
+    """
+    GET: Get active promotional offers for a salon (customer-facing).
+    Only returns promotions the current user is eligible for.
+    """
+    try:
+        user = get_current_user()
+        user_id = user.get('sub') or user.get('id')
+        purchase_amount = float(request.args.get("purchase_amount", 0))
+        promotions, error = PromotionService.get_active_promotions(salon_id, purchase_amount, user_id=user_id)
+        if error:
+            log_service_error(error)
+            return jsonify({"error": error}), 400
+        return jsonify({"promotions": promotions}), 200
+    except Exception as e:
+        log_route_error(e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -319,22 +392,54 @@ def get_salon_status_history(salon_id):
 @salon_bp.route("/mine", methods=["GET"], strict_slashes=False)
 @auto_log_errors
 @login_required()
-@role_required(['salon_owner', 'admin'])
+@role_required(['salon_owner', 'barber', 'admin'])
 @swag_from("../docs/salon_mine.yml")
 def get_my_salon():
     """
-    Fetch the current owner's salon (single).
+    Fetch the current user's salon.
+    For salon owners: returns their owned salon
+    For barbers: returns the salon they're associated with
     """
     try:
         user = get_current_user()
-        owner_id = user.get("sub")
-        if not owner_id:
+        user_id = user.get("sub")
+        role = user.get("role")
+        
+        if not user_id:
             return jsonify({"error": "User ID missing"}), 400
 
-        salon, error = SalonService.get_owned_salon(owner_id)
-        if error:
-            return jsonify({"error": error}), 500
-        return jsonify({"salon": salon}), 200
+        # Handle salon owners
+        if role == "salon_owner":
+            salon, error = SalonService.get_owned_salon(user_id)
+            if error:
+                return jsonify({"error": error}), 500
+            return jsonify({"salon": salon}), 200
+        
+        # Handle barbers
+        elif role == "barber":
+            # Get barber's salon_id - if no barber profile exists, they haven't been added to a salon yet
+            barber_id, error = AuthService.get_barber_id(user_id)
+            if error or not barber_id:
+                return jsonify({"error": "Barber is not associated with any salon"}), 404
+
+            # Get barber record to find salon_id
+            barber_resp = supabase.table("barbers").select("salon_id").eq("id", barber_id).single().execute()
+            if getattr(barber_resp, "error", None) or not barber_resp.data:
+                return jsonify({"error": "Barber is not associated with any salon"}), 404
+
+            salon_id = barber_resp.data.get("salon_id")
+            if not salon_id:
+                return jsonify({"error": "Barber is not associated with any salon"}), 404
+
+            # Get salon details
+            salon, error = SalonService.get_salon_detail(salon_id)
+            if error:
+                return jsonify({"error": error}), 404
+
+            return jsonify({"salon": salon}), 200
+        
+        # Admin fallback (could implement admin logic if needed)
+        return jsonify({"error": "Not implemented for this role"}), 400
     except Exception as e:
         log_route_error(e)
         return jsonify({"error": str(e)}), 500
@@ -514,10 +619,18 @@ def get_salon_services(salon_id):
 @swag_from("../docs/salon_employees.yml")
 def get_salon_employees(salon_id):
     """
-    Get all service providers (barbers) for a salon.
+    Get service providers (barbers) for a salon.
+    For salon owners: returns both active and inactive barbers.
+    For customers/public: returns only active barbers.
     """
     try:
-        employees, error = SalonService.get_salon_employees(salon_id)
+        user = get_current_user()
+        user_role = user.get("role")
+        
+        # Salon owners can see inactive barbers, everyone else only sees active
+        include_inactive = (user_role == "salon_owner" or user_role == "admin")
+        
+        employees, error = SalonService.get_salon_employees(salon_id, include_inactive=include_inactive)
         if error:
             log_service_error(error)
             return jsonify({"error": error}), 404
@@ -613,12 +726,18 @@ def search_for_employee():
         query = request.args.get("email", "")
         if not query:
             return jsonify({"error": "Missing search query parameter 'email'"}), 400
-        print("Searching for providers with email containing:", query)
+        
         result, error = SalonService.salon_owner_employee_search(query)
         if error:
             log_service_error(error)
             return jsonify({"error": error}), 404
-        return jsonify({"providers": result}), 200
+        
+        # result can be an empty list if no matches found
+        if result is None:
+            return jsonify({"error": "Search failed"}), 500
+        
+        # Frontend expects "barbers" key, not "providers"
+        return jsonify({"barbers": result}), 200
     except Exception as e:
         log_route_error(e)
         return jsonify({"error3": str(e)}), 500
@@ -634,20 +753,22 @@ def add_service_provider():
     Add a new service provider to a salon.
     """
     try:
+        user = get_current_user()
+        owner_id = user.get("sub")  # Get the salon owner's ID (the person making the request)
+        
         json_data = request.get_json()
         if not json_data:
             return jsonify({"error": "Invalid JSON body"}), 400
         
         salon_id = json_data.get('salon_id')
-        user_id = json_data.get('user_id')
-        
+        user_id = json_data.get('user_id')  # This is the barber being added
         
         if not salon_id or not user_id:
             return jsonify({"error": "Missing required fields"}), 400
         bio = json_data.get('bio', '')
         years_experience = json_data.get('years_experience', 0)
         is_active = json_data.get('is_active', True)
-        result, error = SalonService.add_service_provider(salon_id, user_id, bio, years_experience, is_active)
+        result, error = SalonService.add_service_provider(salon_id, user_id, bio, years_experience, is_active, owner_id=owner_id)
         
         if error:
             log_service_error(error)

@@ -2,6 +2,7 @@
 Routes for managing payments.
 """
 from flask import Blueprint, request, jsonify, g
+from flasgger.utils import swag_from
 from middleware import login_required, role_required, get_current_user
 from middleware.error_logging import auto_log_errors, log_route_error, log_service_error
 from services.payment_service import PaymentService
@@ -15,6 +16,7 @@ payments_bp.strict_slashes = False
 @payments_bp.route('/create-with-appointment', methods=['POST'])
 @auto_log_errors
 @login_required()
+@swag_from("../docs/payments_create_with_appointment.yml")
 def create_payment_with_appointment():
     """
     Create an appointment and process payment atomically.
@@ -117,7 +119,8 @@ def create_payment_with_appointment():
                 cardholder_name=data.get('cardholder_name'),
                 billing_address=data.get('billing_address'),
                 save_payment_method=data.get('save_payment_method', False),
-                redeem_loyalty_points=data.get('redeem_loyalty_points', False)
+                redeem_loyalty_points=data.get('redeem_loyalty_points', False),
+                promotion_id=data.get('promotion_id')
             )
             
             if error:
@@ -166,6 +169,7 @@ def create_payment_with_appointment():
 @payments_bp.route('/', methods=['POST'])
 @auto_log_errors
 @login_required()
+@swag_from("../docs/payments_create.yml")
 def create_payment():
     """
     Create a payment for an existing appointment.
@@ -257,6 +261,7 @@ def create_payment():
 @payments_bp.route('/', methods=['GET'])
 @auto_log_errors
 @login_required()
+@swag_from("../docs/payments_list.yml")
 def list_payments():
     """
     Get payments for the current user.
@@ -300,6 +305,7 @@ def list_payments():
 @payments_bp.route('/<payment_id>', methods=['GET'])
 @auto_log_errors
 @login_required()
+@swag_from("../docs/payments_get.yml")
 def get_payment(payment_id):
     """
     Get a single payment by ID.

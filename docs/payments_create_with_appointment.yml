@@ -4,8 +4,9 @@ tags:
 summary: Create appointment and process payment atomically
 description: >
   Creates an appointment and processes payment in a single transaction.
-  The appointment is only created if payment succeeds. If payment fails,
-  the appointment is automatically cancelled.
+  The appointment is only created if payment succeeds.
+  Supports both saved payment methods and new card details.
+  Can optionally redeem loyalty points for a discount.
 consumes:
   - application/json
 produces:
@@ -13,104 +14,99 @@ produces:
 parameters:
   - in: header
     name: Authorization
-    description: Bearer access token
-    required: true
     type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
   - in: body
     name: body
     required: true
     schema:
       type: object
-      required:
-        - appointment
+      required: [appointment]
       properties:
         appointment:
           type: object
-          required:
-            - barber_id
-            - service_id
-            - salon_id
-            - start_at
-            - end_at
+          required: [barber_id, service_id, salon_id, start_at, end_at]
           properties:
             barber_id:
               type: string
               format: uuid
-              example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+              example: "a1234567-89ab-cdef-0123-456789abcdef"
             service_id:
               type: string
               format: uuid
-              example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+              example: "b1234567-89ab-cdef-0123-456789abcdef"
             salon_id:
               type: string
               format: uuid
-              example: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+              example: "c1234567-89ab-cdef-0123-456789abcdef"
             start_at:
               type: string
               format: date-time
-              example: "2024-12-10T09:00:00Z"
+              example: "2024-12-25T10:00:00Z"
             end_at:
               type: string
               format: date-time
-              example: "2024-12-10T10:00:00Z"
+              example: "2024-12-25T11:00:00Z"
             notes:
               type: string
-              example: "Please use clippers for the fade"
+              example: "Please use clippers"
         payment_method_id:
           type: string
           format: uuid
-          description: ID of saved payment method to use (optional if providing new card details)
-          example: "d4e5f6a7-b8c9-0123-def0-234567890123"
+          description: Use saved payment method (optional if providing new card)
+          example: "d1234567-89ab-cdef-0123-456789abcdef"
         card_number:
           type: string
-          description: Card number (required if not using payment_method_id)
+          description: New card number (required if payment_method_id not provided)
           example: "4111111111111111"
         exp_month:
           type: integer
-          description: Expiration month (1-12, required if not using payment_method_id)
+          description: Expiration month (1-12)
           example: 12
         exp_year:
           type: integer
-          description: Expiration year (required if not using payment_method_id)
+          description: Expiration year
           example: 2025
         cvv:
           type: string
-          description: CVV code (required if not using payment_method_id)
+          description: CVV code
           example: "123"
         cardholder_name:
           type: string
-          description: Name on card (required if not using payment_method_id)
           example: "John Doe"
         billing_address:
           type: object
-          description: Billing address (required if not using payment_method_id)
           properties:
             line1:
               type: string
               example: "123 Main St"
             line2:
               type: string
-              example: "Apt 4B"
+              example: ""
             city:
               type: string
-              example: "Newark"
+              example: "New York"
             state:
               type: string
-              example: "NJ"
+              example: "NY"
             zip:
               type: string
-              example: "07102"
+              example: "10001"
             country:
               type: string
               example: "US"
         save_payment_method:
           type: boolean
-          description: Whether to save the payment method for future use
+          description: Save this card for future use
           default: false
         redeem_loyalty_points:
           type: boolean
-          description: Whether to redeem available loyalty points for discount
+          description: Use loyalty points for discount
           default: false
+
 responses:
   201:
     description: Appointment created and payment processed successfully
@@ -122,75 +118,19 @@ responses:
           example: "Appointment created and payment processed successfully"
         appointment:
           type: object
-          properties:
-            id:
-              type: string
-              format: uuid
-            customer_id:
-              type: string
-              format: uuid
-            barber_id:
-              type: string
-              format: uuid
-            service_id:
-              type: string
-              format: uuid
-            salon_id:
-              type: string
-              format: uuid
-            status:
-              type: string
-              example: "scheduled"
-            start_at:
-              type: string
-              format: date-time
-            end_at:
-              type: string
-              format: date-time
-            notes:
-              type: string
-            created_at:
-              type: string
-              format: date-time
         payment:
           type: object
-          properties:
-            id:
-              type: string
-              format: uuid
-            appointment_id:
-              type: string
-              format: uuid
-            amount:
-              type: number
-            payment_status:
-              type: string
-              example: "paid"
-            created_at:
-              type: string
-              format: date-time
+
   400:
-    description: Invalid request, payment failed, or service validation error
+    description: Validation error or payment failure
     schema:
       type: object
       properties:
         error:
           type: string
           example: "Payment failed: Insufficient funds"
-  404:
-    description: Service not found
-    schema:
-      type: object
-      properties:
-        error:
-          type: string
-          example: "Service not found"
-  500:
-    description: Internal server error
-    schema:
-      type: object
-      properties:
-        error:
-          type: string
-          example: "Payment processing failed: Database error"
 
+  401:
+    description: Unauthorized
+  500:
+    description: Server error

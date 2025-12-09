@@ -1,0 +1,47 @@
+---
+tags:
+  - Loyalty
+summary: Get available loyalty rewards for a salon
+description: >
+  Get loyalty program configuration including point threshold and discount percentage.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: query
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon UUID
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+responses:
+  200:
+    description: Loyalty rewards configuration
+    schema:
+      type: object
+      properties:
+        pointThreshold:
+          type: integer
+          description: Minimum points required for redemption
+          example: 100
+        rewardDiscount:
+          type: integer
+          description: Discount percentage when redeeming points
+          example: 10
+
+  400:
+    description: Invalid salon_id
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

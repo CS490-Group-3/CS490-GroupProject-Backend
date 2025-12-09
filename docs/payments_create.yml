@@ -1,0 +1,112 @@
+---
+tags:
+  - Payments
+summary: Create a payment for an existing appointment
+description: >
+  Creates a payment record for an appointment that was already created.
+  Supports both saved payment methods and new card details.
+  Can optionally redeem loyalty points for a discount.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required: [appointment_id]
+      properties:
+        appointment_id:
+          type: string
+          format: uuid
+          example: "a1234567-89ab-cdef-0123-456789abcdef"
+        payment_method_id:
+          type: string
+          format: uuid
+          description: Use saved payment method (optional if providing new card)
+          example: "d1234567-89ab-cdef-0123-456789abcdef"
+        card_number:
+          type: string
+          description: New card number (required if payment_method_id not provided)
+          example: "4111111111111111"
+        exp_month:
+          type: integer
+          description: Expiration month (1-12)
+          example: 12
+        exp_year:
+          type: integer
+          description: Expiration year
+          example: 2025
+        cvv:
+          type: string
+          description: CVV code
+          example: "123"
+        cardholder_name:
+          type: string
+          example: "John Doe"
+        billing_address:
+          type: object
+          properties:
+            line1:
+              type: string
+              example: "123 Main St"
+            line2:
+              type: string
+              example: ""
+            city:
+              type: string
+              example: "New York"
+            state:
+              type: string
+              example: "NY"
+            zip:
+              type: string
+              example: "10001"
+            country:
+              type: string
+              example: "US"
+        save_payment_method:
+          type: boolean
+          description: Save this card for future use
+          default: false
+        redeem_loyalty_points:
+          type: boolean
+          description: Use loyalty points for discount
+          default: false
+
+responses:
+  201:
+    description: Payment processed successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Payment processed successfully"
+        payment:
+          type: object
+
+  400:
+    description: Validation error or payment failure
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Appointment not found"
+
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

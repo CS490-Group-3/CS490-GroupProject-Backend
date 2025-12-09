@@ -2,6 +2,7 @@
 Routes for managing saved payment methods.
 """
 from flask import Blueprint, request, jsonify, g
+from flasgger.utils import swag_from
 from middleware import login_required, get_current_user
 from middleware.error_logging import auto_log_errors, log_route_error, log_service_error
 from services.payment_service import PaymentService
@@ -15,6 +16,7 @@ payment_methods_bp.strict_slashes = False
 @payment_methods_bp.route('/', methods=['GET'])
 @auto_log_errors
 @login_required()
+@swag_from("../docs/payment_methods_list.yml")
 def list_payment_methods():
     """
     Get all saved payment methods for the current user.
@@ -45,6 +47,7 @@ def list_payment_methods():
 @payment_methods_bp.route('/', methods=['POST'])
 @auto_log_errors
 @login_required()
+@swag_from("../docs/payment_methods_create.yml")
 def create_payment_method():
     """
     Create a new saved payment method.
@@ -115,6 +118,7 @@ def create_payment_method():
 @payment_methods_bp.route('/<payment_method_id>/set-default', methods=['PUT'])
 @auto_log_errors
 @login_required()
+@swag_from("../docs/payment_methods_set_default.yml")
 def set_default_payment_method(payment_method_id):
     """
     Set a payment method as default.
@@ -149,6 +153,7 @@ def set_default_payment_method(payment_method_id):
 @payment_methods_bp.route('/<payment_method_id>', methods=['DELETE'])
 @auto_log_errors
 @login_required()
+@swag_from("../docs/payment_methods_delete.yml")
 def delete_payment_method(payment_method_id):
     """
     Delete a saved payment method (soft delete).

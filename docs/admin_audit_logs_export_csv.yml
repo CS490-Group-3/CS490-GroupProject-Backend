@@ -1,0 +1,81 @@
+---
+tags:
+  - Admin
+summary: Export audit logs to CSV
+description: >
+  Export audit logs to CSV format for download.
+  Returns a CSV table with audit log entries including timestamp, table name,
+  record ID, action type, user who made the change, and old/new values.
+  Supports optional filtering by table name, record ID, action, user, and date range.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+  - in: query
+    name: limit
+    required: false
+    schema:
+      type: integer
+      default: 1000
+    description: Maximum number of logs to export
+    example: 1000
+  - in: query
+    name: table_name
+    required: false
+    schema:
+      type: string
+    description: Filter by table name
+    example: "salons"
+  - in: query
+    name: record_id
+    required: false
+    schema:
+      type: string
+    description: Filter by record ID
+    example: "123e4567-e89b-12d3-a456-426614174000"
+  - in: query
+    name: action
+    required: false
+    schema:
+      type: string
+      enum: [INSERT, UPDATE, DELETE]
+    description: Filter by action type
+    example: "UPDATE"
+  - in: query
+    name: changed_by
+    required: false
+    schema:
+      type: string
+    description: Filter by user ID who made the change
+    example: "123e4567-e89b-12d3-a456-426614174000"
+  - in: query
+    name: start_date
+    required: false
+    schema:
+      type: string
+      format: date-time
+    description: Filter logs from this date (ISO format)
+    example: "2024-01-01T00:00:00Z"
+  - in: query
+    name: end_date
+    required: false
+    schema:
+      type: string
+      format: date-time
+    description: Filter logs until this date (ISO format)
+    example: "2024-01-31T23:59:59Z"
+responses:
+  200:
+    description: CSV file download
+    schema:
+      type: file
+  400:
+    description: Bad request
+  403:
+    description: Forbidden
+  500:
+    description: Internal server error
+

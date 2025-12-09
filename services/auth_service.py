@@ -329,7 +329,7 @@ class AuthService:
                 .execute()
             
             old_values = {}
-            if old_profile.data:
+            if old_profile and hasattr(old_profile, 'data') and old_profile.data:
                 for key in update_data.keys():
                     if key in old_profile.data:
                         old_values[key] = old_profile.data[key]
@@ -337,27 +337,32 @@ class AuthService:
             # Add updated timestamp
             update_data['updated_at'] = 'now()'
             
-            # Update user_profiles table directly
-            # Note: user_details is a VIEW (not a table), so it cannot be updated directly
-            # The view columns are aliased (profile_created_at, profile_updated_at) and it has JOINs
+            # Always UPDATE - profile should exist for logged-in users
             response = supabase.table('user_profiles')\
                 .update(update_data)\
                 .eq('user_id', user_id)\
                 .execute()
             
-            if response.data:
-                # Log audit
-                AuditLoggingService.log_audit(
-                    table_name='user_profiles',
-                    record_id=user_id,
-                    action='UPDATE',
-                    old_values=old_values,
-                    new_values=update_data,
-                    changed_by=user_id
-                )
-                return response.data[0], None
-            else:
-                return None, "Failed to update profile"
+            # Check for errors
+            if getattr(response, "error", None):
+                return None, f"Failed to update profile: {response.error.message if hasattr(response.error, 'message') else str(response.error)}"
+            
+            # Fetch the updated profile
+            updated_profile = AuthService.get_user_profile(user_id)
+            if not updated_profile:
+                return None, "Failed to update profile: Profile not found after update"
+            
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='user_profiles',
+                record_id=user_id,
+                action='UPDATE',
+                old_values=old_values,
+                new_values=update_data,
+                changed_by=user_id
+            )
+            
+            return updated_profile, None
                 
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')

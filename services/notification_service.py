@@ -269,10 +269,13 @@ class NotificationService:
 
 
     @staticmethod
-    def notify_promotional_offer(offer_id, target_audience="existing_customers"):
+    def notify_promotional_offer(offer_id, target_audience="existing_customers", min_visits=None, min_loyalty_points=None, targeting_logic="and"):
         """
         Broadcast a promotional offer to eligible customers of a salon.
-        target_audience: "existing_customers" (default) or "all_users"
+        target_audience: "existing_customers" (default), "all_users", or "custom"
+        min_visits: Optional minimum number of confirmed visits (for custom targeting)
+        min_loyalty_points: Optional minimum lifetime loyalty points (for custom targeting)
+        targeting_logic: "and" or "or" - how to combine criteria when both are specified (default: "and")
         """
         # ---Fetch the offer ---
         offer = (
@@ -307,22 +310,85 @@ class NotificationService:
             for u in users.data or []:
                 if u["role"] not in ("admin", "owner"):
                     user_ids.add(u["user_id"])
+        elif target_audience == "custom":
+            # Custom targeting: filter by min_visits and/or min_loyalty_points
+            # If both specified: user must meet BOTH (AND logic)
+            # If only one specified: user must meet that ONE criterion
+            
+            visit_users = set()
+            points_users = set()
+            
+            # Get users meeting min_visits criterion (if specified)
+            if min_visits is not None:
+                bookings = (
+                    supabase.table("appointments")
+                    .select("customer_id")
+                    .eq("salon_id", salon_id)
+                    .in_("status", ["scheduled", "confirmed", "completed"])
+                    .execute()
+                )
+                # Count visits per user
+                visit_counts = {}
+                for b in (bookings.data or []):
+                    customer_id = b["customer_id"]
+                    visit_counts[customer_id] = visit_counts.get(customer_id, 0) + 1
+                
+                # Filter by min_visits
+                visit_users = {cid for cid, count in visit_counts.items() if count >= min_visits}
+            
+            # Get users meeting min_loyalty_points criterion (if specified)
+            if min_loyalty_points is not None:
+                loyalty = (
+                    supabase.table("loyalty_balances")
+                    .select("user_id, lifetime_points_earned")
+                    .eq("salon_id", salon_id)
+                    .execute()
+                )
+                points_users = {
+                    l["user_id"] for l in (loyalty.data or []) 
+                    if float(l.get("lifetime_points_earned", 0)) >= min_loyalty_points
+                }
+            
+            # Combine criteria:
+            # - If both specified: use targeting_logic ("and" = intersection, "or" = union)
+            # - If only one specified: use that set
+            if min_visits is not None and min_loyalty_points is not None:
+                # Both criteria specified: use targeting_logic
+                if targeting_logic == "or":
+                    # OR logic: user must meet EITHER criterion
+                    user_ids = visit_users | points_users
+                else:
+                    # AND logic (default): user must meet BOTH criteria
+                    user_ids = visit_users & points_users
+            elif min_visits is not None:
+                # Only visits criterion
+                user_ids = visit_users
+            elif min_loyalty_points is not None:
+                # Only points criterion
+                user_ids = points_users
+            else:
+                # Neither specified (shouldn't happen with validation, but handle gracefully)
+                user_ids = set()
         else:
             # existing customers only (bookings + loyalty)
+            # Only count scheduled/completed appointments (not cancelled)
             bookings = (
                 supabase.table("appointments")
                 .select("customer_id")
                 .eq("salon_id", salon_id)
+                .in_("status", ["scheduled", "confirmed", "completed"])
                 .execute()
             )
+            # Get users with any lifetime loyalty points (not just current balance)
             loyalty = (
                 supabase.table("loyalty_balances")
-                .select("user_id")
+                .select("user_id, lifetime_points_earned")
                 .eq("salon_id", salon_id)
                 .execute()
             )
+            # Include users with appointments OR users with any lifetime points earned
             user_ids = {b["customer_id"] for b in (bookings.data or [])} | {
-                l["user_id"] for l in (loyalty.data or [])
+                l["user_id"] for l in (loyalty.data or []) if float(l.get("lifetime_points_earned", 0)) > 0
             }
 
         if not user_ids:
@@ -350,7 +416,7 @@ class NotificationService:
                 "title": f"New Promotional Offer at {salon_name}: {title}",
                 "message": description,
                 "status": "pending",
-                "related_id": offer_id,
+                "related_id": salon_id,  # Use salon_id so customers can navigate to salon
                 "created_at": now,
                 "scheduled_for": offer.data.get("valid_from") or now,
             }

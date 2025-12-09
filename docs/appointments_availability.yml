@@ -1,0 +1,88 @@
+---
+tags:
+  - Appointments
+summary: Get available appointment slots
+description: >
+  Get available time slots for booking an appointment with a specific barber and service.
+  Returns slots that are within the barber's availability and not already booked.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: query
+    name: salon_id
+    type: string
+    format: uuid
+    required: true
+    description: Salon UUID
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+  - in: query
+    name: barber_id
+    type: string
+    format: uuid
+    required: true
+    description: Barber UUID
+    example: "b1234567-89ab-cdef-0123-456789abcdef"
+
+  - in: query
+    name: service_id
+    type: string
+    format: uuid
+    required: true
+    description: Service UUID
+    example: "c1234567-89ab-cdef-0123-456789abcdef"
+
+  - in: query
+    name: date
+    type: string
+    format: date
+    required: true
+    description: Date to check availability (YYYY-MM-DD)
+    example: "2024-12-25"
+
+responses:
+  200:
+    description: List of available time slots
+    schema:
+      type: object
+      properties:
+        slots:
+          type: array
+          items:
+            type: object
+            properties:
+              start_at:
+                type: string
+                format: date-time
+                example: "2024-12-25T10:00:00Z"
+              end_at:
+                type: string
+                format: date-time
+                example: "2024-12-25T11:00:00Z"
+              label:
+                type: string
+                description: Human-readable time label
+                example: "10:00 AM"
+
+  400:
+    description: Missing required parameters or error retrieving slots
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "salon_id, barber_id, service_id, and date are required"
+
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

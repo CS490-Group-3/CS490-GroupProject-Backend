@@ -1,0 +1,68 @@
+---
+tags:
+  - Loyalty
+summary: Get loyalty point balances across all salons
+description: >
+  Get loyalty point balances for the authenticated user across all salons.
+  Includes transaction activity for each salon.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+responses:
+  200:
+    description: Loyalty balances for all salons
+    schema:
+      type: object
+      properties:
+        salon_balances:
+          type: array
+          items:
+            type: object
+            properties:
+              salon_id:
+                type: string
+                format: uuid
+              salon_name:
+                type: string
+              balance:
+                type: integer
+                description: Current point balance
+              lifetime_points_earned:
+                type: integer
+              lifetime_points_redeemed:
+                type: integer
+              activity:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    type:
+                      type: string
+                      enum: [earned, redeemed, expired]
+                    points:
+                      type: integer
+                    description:
+                      type: string
+                    date:
+                      type: string
+                    appointmentId:
+                      type: string
+                      format: uuid
+
+  400:
+    description: Error retrieving balances
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

@@ -1,0 +1,51 @@
+---
+tags:
+  - Payment Methods
+summary: List saved payment methods
+description: >
+  Get all saved payment methods for the authenticated user.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+responses:
+  200:
+    description: List of payment methods
+    schema:
+      type: object
+      properties:
+        payment_methods:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              card_last4:
+                type: string
+                example: "1111"
+              card_brand:
+                type: string
+                example: "visa"
+              exp_month:
+                type: integer
+                example: 12
+              exp_year:
+                type: integer
+                example: 2025
+              is_default:
+                type: boolean
+
+  401:
+    description: Unauthorized
+  500:
+    description: Server error
+
+

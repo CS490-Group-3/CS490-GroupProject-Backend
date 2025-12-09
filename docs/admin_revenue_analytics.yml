@@ -1,0 +1,118 @@
+---
+tags:
+  - Admin
+summary: Get revenue analytics for all salons
+description: >
+  Get comprehensive revenue analytics across all salons.
+  Includes total revenue, salon breakdown, monthly trends, revenue by type (appointments vs orders),
+  and identifies top performing salon.
+  Supports filtering by date range.
+  Only admins can access this.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: query
+    name: start_date
+    type: string
+    format: date-time
+    required: false
+    description: Start date for filtering (ISO 8601 format)
+    example: "2024-01-01T00:00:00Z"
+
+  - in: query
+    name: end_date
+    type: string
+    format: date-time
+    required: false
+    description: End date for filtering (ISO 8601 format)
+    example: "2024-12-31T23:59:59Z"
+
+responses:
+  200:
+    description: Revenue analytics for all salons
+    schema:
+      type: object
+      properties:
+        total_revenue:
+          type: number
+          description: Total revenue across all salons
+          example: 125000.50
+        total_payments:
+          type: integer
+          description: Total number of completed payments
+          example: 1500
+        salon_breakdown:
+          type: array
+          description: Revenue breakdown by salon (sorted by revenue descending)
+          items:
+            type: object
+            properties:
+              salon_id:
+                type: string
+                example: "uuid"
+              salon_name:
+                type: string
+                example: "Fade Factory Barbershop"
+              revenue:
+                type: number
+                example: 35000.00
+              count:
+                type: integer
+                example: 450
+              average:
+                type: number
+                example: 77.78
+        monthly_breakdown:
+          type: array
+          description: Monthly revenue breakdown
+          items:
+            type: object
+            properties:
+              month:
+                type: string
+                format: YYYY-MM
+                example: "2024-01"
+              revenue:
+                type: number
+                example: 35000.00
+              count:
+                type: integer
+                example: 450
+              average:
+                type: number
+                example: 77.78
+        revenue_by_type:
+          type: object
+          properties:
+            appointments:
+              type: number
+              description: Revenue from appointments
+              example: 80000.00
+            orders:
+              type: number
+              description: Revenue from product orders
+              example: 45000.50
+        date_range:
+          type: object
+          properties:
+            start:
+              type: string
+              nullable: true
+            end:
+              type: string
+              nullable: true
+
+  401:
+    description: Unauthorized
+  403:
+    description: Forbidden - not an admin
+  500:
+    description: Server error
+

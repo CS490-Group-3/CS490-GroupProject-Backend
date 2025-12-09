@@ -1,0 +1,44 @@
+---
+tags:
+  - Admin
+summary: Export revenue analytics to CSV
+description: >
+  Export revenue analytics data to CSV format for download.
+  Returns a clean CSV table with salon-level revenue breakdown including
+  salon ID, salon name, revenue, transaction count, and average transaction.
+  Supports optional date range filtering.
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    schema:
+      type: string
+    description: Bearer token for authentication
+  - in: query
+    name: start_date
+    required: false
+    schema:
+      type: string
+      format: date-time
+    description: Start date for filtering (ISO 8601 format)
+    example: "2024-01-01T00:00:00Z"
+  - in: query
+    name: end_date
+    required: false
+    schema:
+      type: string
+      format: date-time
+    description: End date for filtering (ISO 8601 format)
+    example: "2024-12-31T23:59:59Z"
+responses:
+  200:
+    description: CSV file download
+    schema:
+      type: file
+  400:
+    description: Bad request
+  403:
+    description: Forbidden
+  500:
+    description: Internal server error
+
