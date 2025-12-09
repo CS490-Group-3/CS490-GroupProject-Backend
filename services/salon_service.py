@@ -98,12 +98,14 @@ class SalonService:
 
         updates = {}
         if license_file:
-            updates["license_url"] = StorageService.upload_file(license_file, salon_id, "license")
+            license_result = StorageService.upload_file(license_file, salon_id, "license")
+            updates["license_url"] = license_result.get("signed_url") or license_result.get("url")
         elif license_url:
             updates["license_url"] = license_url
 
         if logo_file:
-            updates["logo_url"] = StorageService.upload_file(logo_file, salon_id, "logo")
+            logo_result = StorageService.upload_file(logo_file, salon_id, "logo")
+            updates["logo_url"] = logo_result.get("signed_url") or logo_result.get("url")
         elif logo_url:
             updates["logo_url"] = logo_url
 
@@ -272,7 +274,8 @@ class SalonService:
             else:
                 services = services_res or []
 
-            employees_res = SalonService.get_salon_employees(salon_id)
+            # For public salon detail (customers), only show active employees
+            employees_res = SalonService.get_salon_employees(salon_id, include_inactive=False)
             if isinstance(employees_res, tuple):
                 employees, _ = employees_res
             else:
@@ -381,60 +384,126 @@ class SalonService:
             return None, str(e)
 
     @staticmethod
-    def add_service_provider(salon_id, provider_id, bio=None, years_experience=None, is_active=True):
+    def add_service_provider(salon_id, provider_id, bio=None, years_experience=None, is_active=True, owner_id=None):
         """
-        Add a service provider (barber) to a salon.
+        Add or rehire a service provider (barber) to a salon.
+        If the barber already has a record (even if inactive), updates it instead of creating a new one.
+        This handles rehiring previously fired employees.
         """
         try:
-            barber_data = {
-                "salon_id": salon_id,
-                "user_id": provider_id,
-                "bio": bio,
-                "years_experience": years_experience,
-                "is_active": is_active,
-            }
-            response = supabase.table("barbers").insert(barber_data).execute()
-            created_id = response.data[0]["id"] if response.data else None
+            # Check if barber record already exists for this user_id
+            existing_response = supabase.table("barbers")\
+                .select("id,salon_id,is_active,bio,years_experience")\
+                .eq("user_id", provider_id)\
+                .maybe_single()\
+                .execute()
             
-            # Log audit
-            if created_id:
+            existing_barber = existing_response.data if existing_response.data else None
+            
+            if existing_barber:
+                # Barber record exists - update it (rehiring case)
+                barber_id = existing_barber["id"]
+                old_salon_id = existing_barber.get("salon_id")
+                old_is_active = existing_barber.get("is_active", True)
+                
+                # Get old values for audit log
+                old_values = {
+                    "salon_id": old_salon_id,
+                    "is_active": old_is_active,
+                    "bio": existing_barber.get("bio"),
+                    "years_experience": existing_barber.get("years_experience"),
+                }
+                
+                # Build update data
+                update_data = {
+                    "salon_id": salon_id,
+                    "is_active": True,  # Always set to active when rehiring
+                }
+                
+                # Update bio and years_experience if provided
+                if bio is not None:
+                    update_data["bio"] = bio
+                if years_experience is not None:
+                    update_data["years_experience"] = years_experience
+                
+                # Update the barber record
+                update_response = supabase.table("barbers")\
+                    .update(update_data)\
+                    .eq("id", barber_id)\
+                    .execute()
+                
+                if getattr(update_response, "error", None):
+                    return None, f"Failed to update barber: {update_response.error.message if hasattr(update_response.error, 'message') else str(update_response.error)}"
+                
+                # Log audit
                 AuditLoggingService.log_audit(
                     table_name='barbers',
-                    record_id=created_id,
-                    action='INSERT',
-                    new_values=barber_data,
-                    changed_by=None  # Could get from context if needed
+                    record_id=barber_id,
+                    action='UPDATE',
+                    old_values=old_values,
+                    new_values=update_data,
+                    changed_by=owner_id
                 )
-
-                # Initialize default barber availability based on salon_hours
-                try:
-                    hours_resp = (
-                        supabase.table("salon_hours")
-                        .select("day_of_week,open_time,close_time,is_closed")
-                        .eq("salon_id", salon_id)
-                        .execute()
+                
+                # If salon changed, we may need to update availability
+                # For now, availability stays with the barber (they keep their schedule)
+                # If needed, we can reset availability based on new salon hours
+                
+                return {"message": "Service provider rehired successfully"}, None
+            else:
+                # New barber - create new record
+                barber_data = {
+                    "salon_id": salon_id,
+                    "user_id": provider_id,
+                    "bio": bio,
+                    "years_experience": years_experience,
+                    "is_active": is_active,
+                }
+                response = supabase.table("barbers").insert(barber_data).execute()
+                created_id = response.data[0]["id"] if response.data else None
+                
+                if getattr(response, "error", None):
+                    return None, f"Failed to create barber: {response.error.message if hasattr(response.error, 'message') else str(response.error)}"
+                
+                # Log audit
+                if created_id:
+                    AuditLoggingService.log_audit(
+                        table_name='barbers',
+                        record_id=created_id,
+                        action='INSERT',
+                        new_values=barber_data,
+                        changed_by=owner_id
                     )
-                    for row in hours_resp.data or []:
-                        if row.get("is_closed"):
-                            continue
-                        day = row.get("day_of_week")
-                        open_time = row.get("open_time")
-                        close_time = row.get("close_time")
-                        if day is None or not open_time or not close_time:
-                            continue
-                        # Best-effort: create availability; ignore errors such as duplicates
-                        ScheduleService.create_availability(
-                            barber_id=created_id,
-                            day_of_week=day,
-                            start_time=open_time,
-                            end_time=close_time,
-                            is_active=True,
+
+                    # Initialize default barber availability based on salon_hours
+                    try:
+                        hours_resp = (
+                            supabase.table("salon_hours")
+                            .select("day_of_week,open_time,close_time,is_closed")
+                            .eq("salon_id", salon_id)
+                            .execute()
                         )
-                except Exception as e:
-                    # Don't block adding the barber if availability seeding fails
-                    ErrorLoggingService.log_exception(e, severity='medium')
-            
-            return {"message": "Service provider added to salon successfully"}, None
+                        for row in hours_resp.data or []:
+                            if row.get("is_closed"):
+                                continue
+                            day = row.get("day_of_week")
+                            open_time = row.get("open_time")
+                            close_time = row.get("close_time")
+                            if day is None or not open_time or not close_time:
+                                continue
+                            # Best-effort: create availability; ignore errors such as duplicates
+                            ScheduleService.create_availability(
+                                barber_id=created_id,
+                                day_of_week=day,
+                                start_time=open_time,
+                                end_time=close_time,
+                                is_active=True,
+                            )
+                    except Exception as e:
+                        # Don't block adding the barber if availability seeding fails
+                        ErrorLoggingService.log_exception(e, severity='medium')
+                
+                return {"message": "Service provider added to salon successfully"}, None
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
@@ -529,22 +598,31 @@ class SalonService:
             return None, str(e)
 
     @staticmethod
-    def get_salon_employees(salon_id):
+    def get_salon_employees(salon_id, include_inactive=False):
         """
-        Get all service providers (barbers) for a salon.
+        Get service providers (barbers) for a salon.
+        
+        Args:
+            salon_id: Salon ID
+            include_inactive: If True, returns both active and inactive barbers.
+                            If False (default), only returns active barbers.
+                            Use True for salon owners, False for customers/public.
         """
         try:
-            response = (
-                supabase.table("barbers")
-                .select("id,user_id,bio,years_experience,is_active")
+            query = supabase.table("barbers")\
+                .select("id,user_id,bio,years_experience,is_active")\
                 .eq("salon_id", salon_id)
-                .execute()
-            )
+            
+            # Only filter by is_active if we don't want inactive barbers
+            if not include_inactive:
+                query = query.eq("is_active", True)
+            
+            response = query.execute()
             rows = response.data or []
             user_ids = [row["user_id"] for row in rows if row.get("user_id")]
             profiles = {}
             if user_ids:
-                # First try user_profiles; if no matching rows, fall back to user_details view
+                # First try user_profiles
                 try:
                     prof_res = (
                         supabase.table("user_profiles")
@@ -553,45 +631,40 @@ class SalonService:
                         .execute()
                     )
                     if prof_res.data:
-                        profiles = {row["user_id"]: row for row in (prof_res.data or [])}
-                    else:
-                        alt = (
-                            supabase.table("user_details")
-                            .select("id,first_name,last_name,profile_image_url")
-                            .in_("id", user_ids)
-                            .execute()
-                        )
-                        profiles = {
-                            row["id"]: {
-                                "first_name": row.get("first_name"),
-                                "last_name": row.get("last_name"),
-                                "profile_image_url": row.get("profile_image_url"),
-                            }
-                            for row in (alt.data or [])
-                        }
+                        # Use user_id as key
+                        profiles = {str(row["user_id"]): row for row in (prof_res.data or [])}
                 except Exception:
-                    # On any error, also fall back to user_details
+                    pass
+                
+                # Always also try user_details as fallback/supplement (some profiles might only be in user_details)
+                try:
                     alt = (
                         supabase.table("user_details")
                         .select("id,first_name,last_name,profile_image_url")
                         .in_("id", user_ids)
                         .execute()
                     )
-                    profiles = {
-                        row["id"]: {
-                            "first_name": row.get("first_name"),
-                            "last_name": row.get("last_name"),
-                            "profile_image_url": row.get("profile_image_url"),
-                        }
-                        for row in (alt.data or [])
-                    }
+                    if alt.data:
+                        # Use id (which is user_id) as key, merge with existing profiles
+                        for row in alt.data:
+                            user_id_key = str(row["id"])
+                            if user_id_key not in profiles:
+                                profiles[user_id_key] = {
+                                    "first_name": row.get("first_name"),
+                                    "last_name": row.get("last_name"),
+                                    "profile_image_url": row.get("profile_image_url"),
+                                }
+                except Exception:
+                    pass
 
             employees = []
             for row in rows:
-                profile = profiles.get(row.get("user_id"), {})
+                user_id = row.get("user_id")
+                # Look up profile using string key for consistency
+                profile = profiles.get(str(user_id)) if user_id else {}
                 employees.append({
                     "id": row.get("id"),
-                    "user_id": row.get("user_id"),
+                    "user_id": user_id,
                     "name": f"{profile.get('first_name','')} {profile.get('last_name','')}".strip() or "Team member",
                     "bio": row.get("bio"),
                     "years_experience": row.get("years_experience"),
@@ -606,22 +679,48 @@ class SalonService:
     def salon_owner_employee_search(query_str):
         """
         Search by email for service providers (barbers) to add to a salon.
-        Returns users with role "barber" who are NOT currently in any salon (not in barbers table).
+        Returns users with role "barber" who either:
+        - Don't have a record in the barbers table at all, OR
+        - Have a record in the barbers table but it's marked as inactive (is_active = False)
         """
         try:
-            response= supabase.table("user_details").select("id,email,first_name,last_name").ilike("email", f"%{query_str}%").eq("role", "barber").execute()
+            if not query_str or len(query_str.strip()) < 2:
+                return [], None
+            
+            query_str = query_str.strip()
+            
+            # Search user_details for barbers matching email (case-insensitive)
+            response = supabase.table("user_details")\
+                .select("id,email,first_name,last_name")\
+                .ilike("email", f"%{query_str}%")\
+                .eq("role", "barber")\
+                .execute()
+            
             if not response.data:
-                return None, "No service providers found matching the search criteria"
+                return [], None
             
-            print("Search response data:", response.data)
+            user_ids = [item["id"] for item in response.data]
             
-            user_ids= [item["id"] for item in response.data]
-            barber_response= supabase.table("barbers").select("user_id").in_("user_id", user_ids).eq("is_active", True).execute()
+            # Get barbers in the barbers table with their is_active status
+            barber_response = supabase.table("barbers")\
+                .select("user_id,is_active")\
+                .in_("user_id", user_ids)\
+                .execute()
             
-            active_user_ids = {item["user_id"] for item in barber_response.data}
-            # Filter to only return users NOT in barbers table, and return full user details
-            available_users = [item for item in response.data if item["id"] not in active_user_ids]
-            print("Found available users:", available_users)
+            # Get set of user_ids that are active barbers (exclude these)
+            active_barber_user_ids = {
+                str(item["user_id"]) for item in (barber_response.data or [])
+                if item.get("is_active", True)  # Only exclude if is_active is True
+            }
+            
+            # Filter to only return users who are either:
+            # 1. Not in barbers table at all, OR
+            # 2. In barbers table but is_active = False
+            available_users = [
+                item for item in response.data 
+                if str(item["id"]) not in active_barber_user_ids
+            ]
+            
             return available_users, None
             
         except Exception as e:
@@ -826,9 +925,11 @@ class SalonService:
 
         # Handle file uploads (same as register_salon)
         if license_file:
-            valid_updates["license_url"] = StorageService.upload_file(license_file, salon_id, "license")
+            license_result = StorageService.upload_file(license_file, salon_id, "license")
+            valid_updates["license_url"] = license_result.get("signed_url") or license_result.get("url")
         if logo_file:
-            valid_updates["logo_url"] = StorageService.upload_file(logo_file, salon_id, "logo")
+            logo_result = StorageService.upload_file(logo_file, salon_id, "logo")
+            valid_updates["logo_url"] = logo_result.get("signed_url") or logo_result.get("url")
         
         # Clean timezone if provided
         if "timezone" in valid_updates:
@@ -896,9 +997,11 @@ class SalonService:
             valid_updates["timezone"] = SalonService._clean_tz(valid_updates["timezone"])
 
         if license_file:
-            valid_updates["license_url"] = StorageService.upload_file(license_file, salon_id, "license")
+            license_result = StorageService.upload_file(license_file, salon_id, "license")
+            valid_updates["license_url"] = license_result.get("signed_url") or license_result.get("url")
         if logo_file:
-            valid_updates["logo_url"] = StorageService.upload_file(logo_file, salon_id, "logo")
+            logo_result = StorageService.upload_file(logo_file, salon_id, "logo")
+            valid_updates["logo_url"] = logo_result.get("signed_url") or logo_result.get("url")
 
         if valid_updates:
             valid_updates["updated_at"] = datetime.utcnow().isoformat()
@@ -1034,35 +1137,57 @@ class SalonService:
             if str(service_resp.data.get("salon_id")) != str(salon_id):
                 return None, "Service does not belong to this salon"
             
-            # Check if relationship already exists
-            existing = supabase.table("barber_services").select("barber_id,service_id").eq("barber_id", barber_id).eq("service_id", service_id).execute()
-            if existing.data:
-                return None, "Service is already assigned to this barber"
+            # Check if relationship already exists (idempotent check)
+            existing = supabase.table("barber_services").select("*").eq("barber_id", barber_id).eq("service_id", service_id).maybe_single().execute()
+            if existing and getattr(existing, "data", None):
+                # Service already assigned - return success (idempotent operation)
+                return {"message": "Service is already assigned to this barber"}, None
             
-            # Insert the relationship
+            # Insert the relationship (single insert, single service_id)
             relationship_data = {
                 "barber_id": barber_id,
                 "service_id": service_id
             }
+
             response = supabase.table("barber_services").insert(relationship_data).execute()
-            
+
+            # Check if response is None
+            if response is None:
+                return None, "Database error: No response from database"
+
+            # If Supabase returned an error, surface it
             if getattr(response, "error", None):
-                return None, response.error.message
-            
-            created_id = response.data[0]["id"] if response.data else None
-            
-            # Log audit
-            if created_id:
-                AuditLoggingService.log_audit(
-                    table_name='barber_services',
-                    record_id=created_id,
-                    action='INSERT',
-                    new_values=relationship_data,
-                    changed_by=owner_id
+                error_msg = response.error.message if hasattr(response.error, 'message') else str(response.error)
+                ErrorLoggingService.log_exception(Exception(f"Supabase insert error: {error_msg}"), severity='high')
+                return None, f"Database error: {error_msg}"
+
+            # If no data was returned (e.g., PostgREST 204), verify the row exists
+            if not getattr(response, "data", None):
+                check_existing = (
+                    supabase.table("barber_services")
+                    .select("*")
+                    .eq("barber_id", barber_id)
+                    .eq("service_id", service_id)
+                    .maybe_single()
+                    .execute()
                 )
+                if not check_existing or not getattr(check_existing, "data", None):
+                    return None, "Failed to create service assignment: No data returned"
             
+            # Use composite key for audit logging (table has no id column)
+            composite_record_id = f"{barber_id}:{service_id}"
+
+            # Log audit
+            AuditLoggingService.log_audit(
+                table_name='barber_services',
+                record_id=composite_record_id,
+                action='INSERT',
+                new_values=relationship_data,
+                changed_by=owner_id
+            )
+
             return {"message": "Service added to barber successfully"}, None
-            
+
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
@@ -1109,30 +1234,48 @@ class SalonService:
             if str(service_resp.data.get("salon_id")) != str(salon_id):
                 return None, "Service does not belong to this salon"
             
-            # Get old relationship for audit log
+            # Get old relationship for audit log BEFORE deletion (match pattern from working deletes)
             old_rel = supabase.table("barber_services").select("*").eq("barber_id", barber_id).eq("service_id", service_id).maybe_single().execute()
             old_values = old_rel.data if old_rel.data else {}
             
-            # Delete the relationship
-            response = supabase.table("barber_services").delete().eq("barber_id", barber_id).eq("service_id", service_id).execute()
+            if not old_values:
+                # Service is not assigned - idempotent: return success
+                return {"message": "Service is not assigned to this barber"}, None
             
-            if getattr(response, "error", None):
-                return None, response.error.message
-            
-            if not response.data:
-                return None, "Service is not assigned to this barber"
-            
-            # Log audit
-            if old_values:
+            # Delete the relationship - DON'T use .select() on DELETE (causes AttributeError)
+            # Match pattern from schedule_service.delete_unavailability and other working deletes
+            import traceback
+            try:
+                response = supabase.table("barber_services").delete().eq("barber_id", barber_id).eq("service_id", service_id).execute()
+                
+                if getattr(response, "error", None):
+                    error_msg = response.error.message if hasattr(response.error, 'message') else str(response.error)
+                    ErrorLoggingService.log_exception(
+                        Exception(f"Supabase delete error: {error_msg}"),
+                        severity='high'
+                    )
+                    return None, f"Database error: {error_msg}"
+                
+                # Use composite key for audit logging (table has no id column)
+                composite_record_id = f"{barber_id}:{service_id}"
+                
+                # Log audit
                 AuditLoggingService.log_audit(
                     table_name='barber_services',
-                    record_id=old_values.get('id'),
+                    record_id=composite_record_id,
                     action='DELETE',
                     old_values=old_values,
                     changed_by=owner_id
                 )
-            
-            return {"message": "Service removed from barber successfully"}, None
+                
+                return {"message": "Service removed from barber successfully"}, None
+                
+            except Exception as delete_error:
+                ErrorLoggingService.log_exception(
+                    Exception(f"Exception during delete: {str(delete_error)}\nTraceback:\n{traceback.format_exc()}"),
+                    severity='high'
+                )
+                return None, f"Failed to remove service assignment: {str(delete_error)}"
             
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
@@ -1218,8 +1361,8 @@ class SalonService:
             valid_updates = {k: v for k, v in (updates or {}).items() if k in allowed_fields and v is not None}
             
             if logo_file:
-                from services.storage_service import StorageService
-                valid_updates["logo_url"] = StorageService.upload_file(logo_file, salon_id, "logo")
+                logo_result = StorageService.upload_file(logo_file, salon_id, "logo")
+                valid_updates["logo_url"] = logo_result.get("signed_url") or logo_result.get("url")
             
             if valid_updates:
                 valid_updates["updated_at"] = datetime.utcnow().isoformat()
@@ -1336,7 +1479,8 @@ class SalonService:
     @staticmethod
     def remove_employee(salon_id: str, barber_id: str, owner_id: str):
         """
-        Remove an employee (barber) from a salon. Validates salon ownership and barber belongs to salon.
+        Deactivate an employee (barber) by setting is_active = False.
+        Does NOT delete the barber record - preserves all appointment history for auditing.
         """
         try:
             # Verify salon ownership
@@ -1348,35 +1492,38 @@ class SalonService:
                 return None, "Forbidden: You don't own this salon"
             
             # Verify barber belongs to salon
-            barber_resp = supabase.table("barbers").select("id,salon_id").eq("id", barber_id).single().execute()
+            barber_resp = supabase.table("barbers").select("id,salon_id,is_active").eq("id", barber_id).single().execute()
             if getattr(barber_resp, "error", None) or not barber_resp.data:
                 return None, "Barber not found"
             
             if str(barber_resp.data.get("salon_id")) != str(salon_id):
                 return None, "Barber does not belong to this salon"
             
-            # Get old values for audit log before deletion
+            # Get old values for audit log
             old_values = {
-                'salon_id': barber_resp.data.get('salon_id'),
-                'user_id': barber_resp.data.get('user_id'),
-                'bio': barber_resp.data.get('bio'),
-                'years_experience': barber_resp.data.get('years_experience'),
-                'is_active': barber_resp.data.get('is_active')
+                'is_active': barber_resp.data.get('is_active', True)
             }
             
-            # Delete barber (this will cascade delete barber_services)
-            supabase.table("barbers").delete().eq("id", barber_id).execute()
+            # Set barber to inactive (DO NOT DELETE - preserves appointment history)
+            update_response = supabase.table("barbers")\
+                .update({"is_active": False})\
+                .eq("id", barber_id)\
+                .execute()
+            
+            if getattr(update_response, "error", None):
+                return None, f"Failed to deactivate barber: {update_response.error.message if hasattr(update_response.error, 'message') else str(update_response.error)}"
             
             # Log audit
             AuditLoggingService.log_audit(
                 table_name='barbers',
                 record_id=barber_id,
-                action='DELETE',
+                action='UPDATE',
                 old_values=old_values,
+                new_values={'is_active': False},
                 changed_by=owner_id
             )
             
-            return {"message": "Employee removed successfully"}, None
+            return {"message": "Employee deactivated successfully"}, None
             
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
