@@ -13,6 +13,7 @@ services_bp.strict_slashes = False
 @services_bp.route("", methods=["GET"], strict_slashes=False)
 @services_bp.route("/", methods=["GET"], strict_slashes=False)
 @login_required()
+@swag_from("../docs/services_list.yml")
 def list_services_route():
     """
     List services globally or for a specific salon.
@@ -37,6 +38,7 @@ def list_services_route():
 @auto_log_errors
 @login_required()
 @role_required(['salon_owner'])
+@swag_from("../docs/services_create.yml")
 def create_service():
     """
     Create a new service for a salon.
@@ -69,6 +71,7 @@ def create_service():
 @services_bp.route("/<service_id>", methods=["GET"], strict_slashes=False)
 @auto_log_errors
 @login_required()
+@swag_from("../docs/services_get.yml")
 def get_service(service_id):
     """
     Get service details by ID.
