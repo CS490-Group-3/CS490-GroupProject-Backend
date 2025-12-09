@@ -229,19 +229,41 @@ def test_get_appointments_by_customer_success(monkeypatch):
         }
     ]
     
-    # Mock Supabase response
+    # Mock Supabase response for data query
     mock_response = Mock()
     mock_response.data = mock_appointments
     mock_response.error = None
     
+    # Mock Supabase response for count query
+    mock_count_response = Mock()
+    mock_count_response.count = 2
+    mock_count_response.error = None
+    
+    call_count = [0]
+    
     class MockTable:
-        def select(self, *args):
+        def __init__(self):
+            self._is_count = False
+        
+        def select(self, *args, **kwargs):
+            # Check if this is a count query (has count="exact" in kwargs)
+            if kwargs.get("count") == "exact":
+                self._is_count = True
             return self
+        
         def eq(self, *args, **kwargs):
             return self
+        
+        def neq(self, *args, **kwargs):
+            return self
+        
         def order(self, *args, **kwargs):
             return self
+        
         def execute(self):
+            call_count[0] += 1
+            if self._is_count:
+                return mock_count_response
             return mock_response
     
     def fake_table(name):
@@ -257,7 +279,8 @@ def test_get_appointments_by_customer_success(monkeypatch):
     monkeypatch.setattr(AppointmentService, "_paginate", lambda query, *args: query)
     
     # Test REAL AppointmentService.get_appointments_by_customer() method
-    appointments, error = AppointmentService.get_appointments_by_customer(
+    # Note: get_appointments_by_customer returns (appointments, error, total_count)
+    appointments, error, total_count = AppointmentService.get_appointments_by_customer(
         customer_id="user-123",
         when="all"
     )
@@ -265,6 +288,7 @@ def test_get_appointments_by_customer_success(monkeypatch):
     assert error is None
     assert len(appointments) == 2
     assert appointments[0]["id"] == "appt-1"
+    assert total_count == 2
 
 
 def test_get_by_id_success(monkeypatch, mock_user):
