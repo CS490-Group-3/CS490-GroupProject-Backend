@@ -22,6 +22,7 @@ appointments_bp.strict_slashes = False
 @auto_log_errors
 @login_required()
 @role_required(['customer', 'admin', 'salon_owner', 'barber'])
+@swag_from("../docs/appointments_availability.yml")
 def get_availability_slots():
     salon_id = request.args.get("salon_id")
     barber_id = request.args.get("barber_id")
@@ -67,17 +68,23 @@ def list_appointments():
         status_param = request.args.get("status")
         status = status_param.split(",") if status_param else None
         page = int(request.args.get("page", 1))
-        # Sensible default page size; callers that need more should pass ?limit=
-        limit = int(request.args.get("limit", 20))
+        limit = int(request.args.get("limit", 100))  # Increased default limit
+        sort_order = request.args.get("sort", "asc").lower()  # asc or desc (only for past appointments)
 
         salon_id = request.args.get("salon_id")
         barber_id = request.args.get("barber_id")
         customer_id = request.args.get("customer_id")
         
+        # Validate sort_order
+        if sort_order not in ["asc", "desc"]:
+            sort_order = "asc"
+        
         #role-based lookup
         if user_role == 'customer':
             # Fetch appointments for customer
-            appointments, error = AppointmentService.get_appointments_by_customer(user_id, when, status, page, limit)
+            appointments, error, total_count = AppointmentService.get_appointments_by_customer(
+                user_id, when, status, page, limit, sort_order
+            )
         elif user_role == 'salon_owner':
             # Fetch all appointments
             salons = get_owned_salons()
@@ -88,9 +95,13 @@ def list_appointments():
             # If customer_id is provided, filter by customer
             if customer_id:
                 # Filter appointments by customer_id and salon_ids
-                appointments, error = AppointmentService.get_all_salon_appointments(salon_ids, when, status, page, limit, customer_id=customer_id)
+                appointments, error, total_count = AppointmentService.get_all_salon_appointments(
+                    salon_ids, when, status, page, limit, customer_id=customer_id, sort_order=sort_order
+                )
             else:
-                appointments, error = AppointmentService.get_all_salon_appointments(salon_ids, when, status, page, limit)
+                appointments, error, total_count = AppointmentService.get_all_salon_appointments(
+                    salon_ids, when, status, page, limit, sort_order=sort_order
+                )
         elif user_role == 'barber':
             # fetch appointments for barber
             # must first lookup barber ID with user ID
@@ -98,10 +109,14 @@ def list_appointments():
             if not barber_id:
                 message = barber_error or "No barber profile found for user"
                 return jsonify({"error": message}), 404
-            appointments, error = AppointmentService.get_appointments_by_barber(barber_id, when, status, page, limit)
+            appointments, error, total_count = AppointmentService.get_appointments_by_barber(
+                barber_id, when, status, page, limit, sort_order
+            )
         elif user_role == "admin":
             # fetch appointments according to filters
-            appointments, error = AppointmentService.get_admin_filtered(salon_id, barber_id, customer_id, when, status, page, limit)
+            appointments, error, total_count = AppointmentService.get_admin_filtered(
+                salon_id, barber_id, customer_id, when, status, page, limit, sort_order
+            )
         else:
             return jsonify({"error": "Unauthorized role"}), 403
         
@@ -114,6 +129,7 @@ def list_appointments():
             "status_filter": status or "all",
             "page": page,
             "limit": limit,
+            "total_count": total_count,
             "count": len(appointments),
             "appointments": appointments
         }), 200
