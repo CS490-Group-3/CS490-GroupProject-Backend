@@ -320,8 +320,8 @@ class LoyaltyService:
                     "transaction_type": trans.get("transaction_type"),
                     "description": trans.get("description"),
                     "date": trans.get("created_at"),
-                    "appointment_id": appointment.get("id") if isinstance(appointment, dict) else None,
-                    "balance_after": trans.get("balance_after")
+                    "appointment_id": trans.get("appointment_id"),
+                    "balance_after": trans.get("balance_after"),
                 })
             
             return formatted_transactions, None
@@ -392,6 +392,7 @@ class LoyaltyService:
         salon_id: str,
         points: int,
         appointment_id: Optional[str] = None,
+        order_id: Optional[str] = None,
         payment_id: Optional[str] = None,
         description: Optional[str] = None
     ) -> Tuple[bool, Optional[str]]:
@@ -403,6 +404,7 @@ class LoyaltyService:
             salon_id: Salon ID
             points: Points to award (must be positive)
             appointment_id: Optional appointment ID that earned the points
+            order_id: Optional order ID that earned the points
             payment_id: Optional payment ID
             description: Optional description
         
@@ -454,8 +456,8 @@ class LoyaltyService:
                 "points": points,
                 "appointment_id": appointment_id,
                 "payment_id": payment_id,
-                "description": description or f"Earned {points} points",
-                "balance_after": new_balance
+                "balance_after": new_balance,
+                "description": description or f"Earned {points} points"
             }
             
             trans_response = supabase.table("loyalty_transactions")\
@@ -542,8 +544,8 @@ class LoyaltyService:
                 "transaction_type": "redeemed",
                 "points": -points_to_redeem,  # Negative for redeemed
                 "payment_id": payment_id,
-                "description": description or f"Redeemed {points_to_redeem} points",
-                "balance_after": new_balance
+                "balance_after": new_balance,
+                "description": description or f"Redeemed {points_to_redeem} points"
             }
             
             trans_response = supabase.table("loyalty_transactions")\
@@ -582,6 +584,206 @@ class LoyaltyService:
         return math.floor(payment_amount * points_per_dollar)
     
     @staticmethod
+    def calculate_potential_points(
+        amount: float,
+        salon_id: str
+    ) -> Tuple[int, Optional[str]]:
+        """
+        Calculate potential loyalty points that would be earned for a given amount.
+        This is used to show customers how many points they'll earn.
+        
+        Args:
+            amount: Payment amount
+            salon_id: Salon ID
+        
+        Returns:
+            Tuple of (points, error_message)
+        """
+        try:
+            loyalty_program, error = LoyaltyService.get_loyalty_program(salon_id)
+            if error:
+                return 0, error
+            
+            if not loyalty_program or not loyalty_program.get("is_active"):
+                return 0, None  # No program or inactive - no points
+            
+            points_per_dollar = float(loyalty_program.get("points_per_dollar", 1.0))
+            points = LoyaltyService.calculate_points_earned(amount, points_per_dollar)
+            
+            return points, None
+            
+        except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='low')
+            return 0, str(e)
+    
+    @staticmethod
+    def get_loyalty_usage_analytics(
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Get loyalty program usage statistics across all salons (admin only).
+        
+        Args:
+            start_date: Optional start date filter (ISO format)
+            end_date: Optional end date filter (ISO format)
+        
+        Returns:
+            Tuple of (usage_analytics_dict, error_message)
+        """
+        try:
+            from collections import defaultdict
+            
+            # Get all loyalty programs
+            programs_res = supabase.table("loyalty_programs")\
+                .select("id, salon_id, is_active, points_per_dollar, reward_threshold, reward_discount_percent")\
+                .execute()
+            
+            if getattr(programs_res, "error", None):
+                return None, programs_res.error.message
+            
+            programs = programs_res.data or []
+            salon_programs = {p["salon_id"]: p for p in programs if p.get("is_active")}
+            
+            # Get salon names
+            salon_ids = list(salon_programs.keys())
+            salons_map = {}
+            
+            if salon_ids:
+                salon_res = supabase.table("salons")\
+                    .select("id, name")\
+                    .in_("id", salon_ids)\
+                    .execute()
+                
+                if salon_res.data:
+                    salons_map = {s["id"]: s.get("name", "Unknown Salon") for s in salon_res.data}
+            
+            # Get all loyalty transactions
+            query = supabase.table("loyalty_transactions")\
+                .select("id, user_id, salon_id, transaction_type, points, created_at")\
+                .order("created_at", desc=False)
+            
+            if start_date:
+                query = query.gte("created_at", start_date)
+            
+            if end_date:
+                query = query.lte("created_at", end_date)
+            
+            trans_res = query.execute()
+            
+            if getattr(trans_res, "error", None):
+                return None, trans_res.error.message
+            
+            transactions = trans_res.data or []
+            
+            # Get all loyalty balances
+            balances_res = supabase.table("loyalty_balances")\
+                .select("user_id, salon_id, points_balance")\
+                .execute()
+            
+            balances = balances_res.data or [] if not getattr(balances_res, "error", None) else []
+            
+            # Calculate statistics
+            total_transactions = len(transactions)
+            total_points_earned = sum(
+                abs(int(t.get("points", 0))) 
+                for t in transactions 
+                if t.get("transaction_type") == "earned"
+            )
+            total_points_redeemed = sum(
+                abs(int(t.get("points", 0))) 
+                for t in transactions 
+                if t.get("transaction_type") == "redeemed"
+            )
+            total_points_expired = sum(
+                abs(int(t.get("points", 0))) 
+                for t in transactions 
+                if t.get("transaction_type") == "expired"
+            )
+            
+            # Current total balances
+            total_current_balance = sum(float(b.get("points_balance", 0)) for b in balances)
+            
+            # Statistics by salon
+            salon_stats = defaultdict(lambda: {
+                "salon_name": "",
+                "program_active": False,
+                "transactions": 0,
+                "points_earned": 0,
+                "points_redeemed": 0,
+                "points_expired": 0,
+                "current_balance": 0,
+                "active_users": set()
+            })
+            
+            for transaction in transactions:
+                salon_id = transaction.get("salon_id")
+                if salon_id:
+                    stats = salon_stats[salon_id]
+                    stats["transactions"] += 1
+                    stats["active_users"].add(transaction.get("user_id"))
+                    
+                    trans_type = transaction.get("transaction_type")
+                    points = abs(int(transaction.get("points", 0)))
+                    
+                    if trans_type == "earned":
+                        stats["points_earned"] += points
+                    elif trans_type == "redeemed":
+                        stats["points_redeemed"] += points
+                    elif trans_type == "expired":
+                        stats["points_expired"] += points
+            
+            for balance in balances:
+                salon_id = balance.get("salon_id")
+                if salon_id and salon_id in salon_stats:
+                    salon_stats[salon_id]["current_balance"] += float(balance.get("points_balance", 0))
+            
+            # Format salon breakdown
+            salon_breakdown = []
+            for salon_id, stats in salon_stats.items():
+                program = salon_programs.get(salon_id, {})
+                salon_breakdown.append({
+                    "salon_id": salon_id,
+                    "salon_name": salons_map.get(salon_id, "Unknown Salon"),
+                    "program_active": program.get("is_active", False),
+                    "points_per_dollar": program.get("points_per_dollar", 0),
+                    "reward_threshold": program.get("reward_threshold", 0),
+                    "reward_discount": program.get("reward_discount_percent", 0),
+                    "transactions": stats["transactions"],
+                    "points_earned": stats["points_earned"],
+                    "points_redeemed": stats["points_redeemed"],
+                    "points_expired": stats["points_expired"],
+                    "current_balance": round(stats["current_balance"], 0),
+                    "active_users": len(stats["active_users"])
+                })
+            
+            salon_breakdown.sort(key=lambda x: x["points_earned"], reverse=True)
+            
+            # Get unique users
+            unique_users = len(set(t.get("user_id") for t in transactions if t.get("user_id")))
+            
+            analytics = {
+                "total_programs": len(salon_programs),
+                "total_transactions": total_transactions,
+                "total_points_earned": total_points_earned,
+                "total_points_redeemed": total_points_redeemed,
+                "total_points_expired": total_points_expired,
+                "total_current_balance": round(total_current_balance, 0),
+                "unique_users": unique_users,
+                "salon_breakdown": salon_breakdown,
+                "date_range": {
+                    "start": start_date,
+                    "end": end_date
+                }
+            }
+            
+            return analytics, None
+            
+        except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='medium')
+            return None, f"Failed to get loyalty usage analytics: {str(e)}"
+    
+    @staticmethod
     def calculate_redemption_discount(
         appointment_amount: float,
         discount_percent: int
@@ -611,7 +813,8 @@ class LoyaltyService:
         cardholder_name: Optional[str] = None,
         billing_address: Optional[Dict] = None,
         save_payment_method: bool = False,
-        redeem_loyalty_points: bool = False
+        redeem_loyalty_points: bool = False,
+        promotion_id: Optional[str] = None
     ) -> Tuple[Optional[Dict], Optional[str]]:
         """
         Process payment for an appointment with loyalty points handling.
@@ -678,10 +881,25 @@ class LoyaltyService:
                     severity='low'
                 )
             
+            # Handle promotion discount first
+            promotion_discount = 0.0
+            if promotion_id:
+                from services.promotion_service import PromotionService
+                # Check if user is eligible for this promotion (must be in promotional_recipients)
+                promotions, error = PromotionService.get_active_promotions(salon_id, payment_amount, user_id=user_id)
+                if error:
+                    return None, f"Failed to validate promotion: {error}"
+                
+                promotion = next((p for p in promotions if p["id"] == promotion_id), None)
+                if not promotion:
+                    return None, "Promotion not found, not active, or you are not eligible for this promotion"
+                
+                promotion_discount = PromotionService.calculate_discount(promotion, payment_amount)
+            
             # Handle loyalty redemption
             loyalty_points_used = 0
-            discount_applied = 0.0
-            final_amount = payment_amount
+            loyalty_discount = 0.0
+            final_amount = payment_amount - promotion_discount
             
             if redeem_loyalty_points and loyalty_program and loyalty_program.get("is_active"):
                 # Get user balance
@@ -698,16 +916,19 @@ class LoyaltyService:
                 current_balance = balance.get("points_balance", 0)
                 
                 if current_balance >= min_points:
-                    # Calculate discount
+                    # Calculate discount on amount after promotion discount
                     discount_percent = loyalty_program.get("discount", 10)
-                    discount_applied = LoyaltyService.calculate_redemption_discount(
-                        payment_amount,
+                    loyalty_discount = LoyaltyService.calculate_redemption_discount(
+                        final_amount,  # Apply loyalty discount to amount after promotion
                         discount_percent
                     )
-                    final_amount = payment_amount - discount_applied
+                    final_amount = final_amount - loyalty_discount
                     loyalty_points_used = min_points
                 else:
                     return None, f"Insufficient points. Need {min_points}, have {current_balance}"
+            
+            # Total discount is promotion + loyalty
+            total_discount = promotion_discount + loyalty_discount
             
             # Create payment
             payment, error = PaymentService.create_payment(
@@ -723,7 +944,7 @@ class LoyaltyService:
                 billing_address=billing_address,
                 save_payment_method=save_payment_method,
                 loyalty_points_used=loyalty_points_used,
-                discount_applied=discount_applied
+                discount_applied=total_discount
             )
             
             if error:
@@ -749,88 +970,9 @@ class LoyaltyService:
                     )
                     return None, f"Payment created but points redemption failed: {error}"
             
-            # Award loyalty points when payment is completed (not when appointment is completed)
-            # Only award if loyalty program is active and no points were redeemed (can't earn and redeem in same transaction)
-            print(f"[LOYALTY DEBUG] Checking if points should be awarded: loyalty_program={loyalty_program is not None}, is_active={loyalty_program.get('is_active') if loyalty_program else 'N/A'}, loyalty_points_used={loyalty_points_used}")
-            
-            if loyalty_program and loyalty_program.get("is_active") and loyalty_points_used == 0:
-                points_per_dollar = float(loyalty_program.get("points_per_dollar", 1.0))
-                points_earned = LoyaltyService.calculate_points_earned(final_amount, points_per_dollar)
-                
-                print(f"[LOYALTY DEBUG] Points calculation: final_amount={final_amount}, points_per_dollar={points_per_dollar}, points_earned={points_earned}")
-                
-                # Log for debugging
-                ErrorLoggingService.log_exception(
-                    Exception(f"Loyalty points calculation: final_amount={final_amount}, points_per_dollar={points_per_dollar}, points_earned={points_earned}, appointment_id={appointment_id}, salon_id={salon_id}, user_id={user_id}"),
-                    severity='low'
-                )
-                
-                if points_earned > 0:
-                    # Check if points were already awarded (shouldn't happen, but safety check)
-                    existing_trans = supabase.table("loyalty_transactions")\
-                        .select("id")\
-                        .eq("appointment_id", appointment_id)\
-                        .eq("transaction_type", "earned")\
-                        .execute()
-                    
-                    print(f"[LOYALTY DEBUG] Existing transactions check: {len(existing_trans.data) if existing_trans.data else 0} found")
-                    
-                    if not existing_trans.data:
-                        # Award points now (when payment is completed)
-                        print(f"[LOYALTY DEBUG] CALLING earn_points: user_id={user_id}, salon_id={salon_id}, points={points_earned}, appointment_id={appointment_id}")
-                        ErrorLoggingService.log_exception(
-                            Exception(f"Attempting to award {points_earned} points to user {user_id} for salon {salon_id}, appointment {appointment_id}"),
-                            severity='low'
-                        )
-                        earn_success, earn_error = LoyaltyService.earn_points(
-                            user_id=user_id,
-                            salon_id=salon_id,
-                            points=points_earned,
-                            appointment_id=appointment_id,
-                            payment_id=payment["id"],
-                            description=f"Earned {points_earned} points from appointment payment"
-                        )
-                        print(f"[LOYALTY DEBUG] earn_points returned: success={earn_success}, error={earn_error}")
-                        if earn_success:
-                            print(f"[LOYALTY DEBUG] ✓ SUCCESS: Points awarded successfully!")
-                            ErrorLoggingService.log_exception(
-                                Exception(f"Successfully awarded {points_earned} points to user {user_id} for salon {salon_id}"),
-                                severity='low'
-                            )
-                        else:
-                            print(f"[LOYALTY DEBUG] ✗ FAILED: {earn_error}")
-                            # Log but don't fail payment
-                            ErrorLoggingService.log_exception(
-                                Exception(f"Failed to award loyalty points: {earn_error}"),
-                                severity='high'
-                            )
-                    else:
-                        print(f"[LOYALTY DEBUG] Points already awarded, skipping")
-                        ErrorLoggingService.log_exception(
-                            Exception(f"Points already awarded for appointment {appointment_id}"),
-                            severity='low'
-                        )
-                else:
-                    print(f"[LOYALTY DEBUG] No points earned (points_earned={points_earned})")
-                    # Log why points weren't earned
-                    ErrorLoggingService.log_exception(
-                        Exception(f"No points earned: final_amount={final_amount}, points_per_dollar={points_per_dollar}, calculated={points_earned}"),
-                        severity='low'
-                    )
-            else:
-                # Log why points weren't awarded
-                reason = []
-                if not loyalty_program:
-                    reason.append("no loyalty program")
-                elif not loyalty_program.get("is_active"):
-                    reason.append(f"program not active (is_active={loyalty_program.get('is_active')})")
-                if loyalty_points_used > 0:
-                    reason.append(f"points were redeemed ({loyalty_points_used})")
-                print(f"[LOYALTY DEBUG] Points NOT awarded: {', '.join(reason) if reason else 'unknown'}")
-                ErrorLoggingService.log_exception(
-                    Exception(f"Loyalty points not awarded: {', '.join(reason) if reason else 'unknown'}, appointment_id={appointment_id}, salon_id={salon_id}, user_id={user_id}"),
-                    severity='low'
-                )
+            # Note: Loyalty points are now awarded when appointment is marked as "completed",
+            # not when payment is processed. This prevents the exploit where customers can
+            # cancel appointments after redeeming points.
             
             return payment, None
             
@@ -925,4 +1067,247 @@ class LoyaltyService:
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
             return False, f"Failed to award points for appointment: {str(e)}"
+    
+    @staticmethod
+    def award_points_for_delivered_order(order_id: str) -> Tuple[bool, Optional[str]]:
+        """
+        Award loyalty points when an order is marked as delivered.
+        This should be called when order status changes to "delivered".
+        
+        Args:
+            order_id: Order ID
+        
+        Returns:
+            Tuple of (success, error_message)
+        """
+        try:
+            # Get order
+            order_response = supabase.table("orders")\
+                .select("id, user_id, salon_id, order_status, total_amount")\
+                .eq("id", order_id)\
+                .single()\
+                .execute()
+            
+            if getattr(order_response, "error", None) or not order_response.data:
+                return False, "Order not found"
+            
+            order = order_response.data
+            
+            if order["order_status"] != "delivered":
+                return False, "Order must be delivered to earn points"
+            
+            user_id = order["user_id"]
+            salon_id = order["salon_id"]
+            order_amount = float(order.get("total_amount", 0))
+            
+            # Get payment for this order
+            payment_response = supabase.table("payments")\
+                .select("id, amount, payment_status")\
+                .eq("order_id", order_id)\
+                .eq("payment_status", "completed")\
+                .maybe_single()\
+                .execute()
+            
+            if getattr(payment_response, "error", None) or not payment_response.data:
+                return False, "No paid payment found for this order"
+            
+            payment = payment_response.data
+            payment_amount = float(payment.get("amount", 0))
+            
+            # Check if points were already awarded (using payment_id)
+            existing_trans = supabase.table("loyalty_transactions")\
+                .select("id")\
+                .eq("payment_id", payment["id"])\
+                .eq("transaction_type", "earned")\
+                .execute()
+            
+            if existing_trans.data:
+                # Points already awarded
+                return True, None
+            
+            # Get loyalty program
+            loyalty_program, error = LoyaltyService.get_loyalty_program(salon_id)
+            if error:
+                return False, error
+            
+            if not loyalty_program or not loyalty_program.get("is_active"):
+                # No loyalty program or inactive - no points awarded
+                return True, None
+            
+            # Calculate points (use payment amount, which may have discounts applied)
+            points_per_dollar = float(loyalty_program.get("points_per_dollar", 1.0))
+            points_earned = LoyaltyService.calculate_points_earned(payment_amount, points_per_dollar)
+            
+            if points_earned <= 0:
+                return True, None  # No points to award
+            
+            # Award points
+            success, error = LoyaltyService.earn_points(
+                user_id=user_id,
+                salon_id=salon_id,
+                points=points_earned,
+                payment_id=payment["id"],
+                description=f"Earned {points_earned} points from delivered order"
+            )
+            
+            return success, error
+            
+        except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
+            return False, f"Failed to award points for order: {str(e)}"
+    
+    @staticmethod
+    def process_order_payment_with_loyalty(
+        user_id: str,
+        order_id: str,
+        payment_amount: float,
+        payment_method_id: Optional[str] = None,
+        card_number: Optional[str] = None,
+        exp_month: Optional[int] = None,
+        exp_year: Optional[int] = None,
+        cvv: Optional[str] = None,
+        cardholder_name: Optional[str] = None,
+        billing_address: Optional[Dict] = None,
+        save_payment_method: bool = False,
+        redeem_loyalty_points: bool = False,
+        promotion_id: Optional[str] = None
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Process payment for an order with loyalty points handling.
+        
+        Args:
+            user_id: User ID
+            order_id: Order ID
+            payment_amount: Original payment amount (before discounts)
+            payment_method_id: Optional saved payment method ID
+            card_number: Optional new card number
+            exp_month: Optional expiration month
+            exp_year: Optional expiration year
+            cvv: Optional CVV
+            cardholder_name: Optional cardholder name
+            billing_address: Optional billing address
+            save_payment_method: Whether to save the new card
+            redeem_loyalty_points: Whether to redeem loyalty points for discount
+        
+        Returns:
+            Tuple of (payment_dict with loyalty info, error_message)
+        """
+        try:
+            # Get order
+            order_response = supabase.table("orders")\
+                .select("id, user_id, salon_id, order_status")\
+                .eq("id", order_id)\
+                .single()\
+                .execute()
+            
+            if getattr(order_response, "error", None) or not order_response.data:
+                return None, "Order not found"
+            
+            order = order_response.data
+            salon_id = order["salon_id"]
+            
+            # Verify order belongs to user
+            if order["user_id"] != user_id:
+                return None, "Order does not belong to user"
+            
+            # Get loyalty program
+            loyalty_program, error = LoyaltyService.get_loyalty_program(salon_id)
+            if error:
+                return None, error
+            
+            # Handle promotion discount first
+            promotion_discount = 0.0
+            if promotion_id:
+                from services.promotion_service import PromotionService
+                # Check if user is eligible for this promotion (must be in promotional_recipients)
+                promotions, error = PromotionService.get_active_promotions(salon_id, payment_amount, user_id=user_id)
+                if error:
+                    return None, f"Failed to validate promotion: {error}"
+                
+                promotion = next((p for p in promotions if p["id"] == promotion_id), None)
+                if not promotion:
+                    return None, "Promotion not found, not active, or you are not eligible for this promotion"
+                
+                promotion_discount = PromotionService.calculate_discount(promotion, payment_amount)
+            
+            # Handle loyalty redemption
+            loyalty_points_used = 0
+            loyalty_discount = 0.0
+            final_amount = payment_amount - promotion_discount
+            
+            if redeem_loyalty_points and loyalty_program and loyalty_program.get("is_active"):
+                # Get user balance
+                balance, error = LoyaltyService.get_user_loyalty_balance(user_id, salon_id)
+                if error:
+                    return None, error
+                
+                if not balance:
+                    balance, error = LoyaltyService._get_or_create_balance(user_id, salon_id)
+                    if error:
+                        return None, error
+                
+                min_points = loyalty_program.get("min_points_for_redemption", 100)
+                current_balance = balance.get("points_balance", 0)
+                
+                if current_balance >= min_points:
+                    # Calculate discount on amount after promotion discount
+                    discount_percent = loyalty_program.get("discount", 10)
+                    loyalty_discount = LoyaltyService.calculate_redemption_discount(
+                        final_amount,  # Apply loyalty discount to amount after promotion
+                        discount_percent
+                    )
+                    final_amount = final_amount - loyalty_discount
+                    loyalty_points_used = min_points
+                else:
+                    return None, f"Insufficient points. Need {min_points}, have {current_balance}"
+            
+            # Total discount is promotion + loyalty
+            total_discount = promotion_discount + loyalty_discount
+            
+            # Create payment
+            from services.payment_service import PaymentService
+            payment, error = PaymentService.create_order_payment(
+                user_id=user_id,
+                order_id=order_id,
+                amount=final_amount,
+                payment_method_id=payment_method_id,
+                card_number=card_number,
+                exp_month=exp_month,
+                exp_year=exp_year,
+                cvv=cvv,
+                cardholder_name=cardholder_name,
+                billing_address=billing_address,
+                save_payment_method=save_payment_method,
+                loyalty_points_used=loyalty_points_used,
+                discount_applied=total_discount
+            )
+            
+            if error:
+                return None, error
+            
+            # Redeem points if used
+            if loyalty_points_used > 0:
+                success, error = LoyaltyService.redeem_points(
+                    user_id=user_id,
+                    salon_id=salon_id,
+                    points_to_redeem=loyalty_points_used,
+                    payment_id=payment["id"],
+                    description=f"Redeemed {loyalty_points_used} points for {loyalty_program.get('discount', 10)}% discount"
+                )
+                
+                if not success:
+                    ErrorLoggingService.log_exception(
+                        Exception(f"Payment created but points redemption failed: {error}"),
+                        severity='high'
+                    )
+            
+            # Note: Loyalty points are now awarded when order is marked as "delivered",
+            # not when payment is processed. This prevents the exploit where customers can
+            # cancel orders after redeeming points.
+            
+            return payment, None
+            
+        except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
+            return None, f"Failed to process payment with loyalty: {str(e)}"
 
