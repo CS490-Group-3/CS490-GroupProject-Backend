@@ -79,6 +79,7 @@ def create_product_route():
         return jsonify({"error": str(e)}), 500
 @products_bp.route("/<product_id>", methods=["GET"])
 @login_required()
+@swag_from("../docs/products_get.yml")
 def get_product_route(product_id):
     """
     Get a product by ID.
@@ -93,6 +94,7 @@ def get_product_route(product_id):
 @products_bp.route("/<product_id>", methods=["PATCH"])
 @login_required()
 @role_required(['salon_owner'])
+@swag_from("../docs/products_update.yml")
 def update_product_route(product_id):
     """
     Update a product.
@@ -122,6 +124,7 @@ def update_product_route(product_id):
 #---- Category Routes ----#
 @products_bp.route("/categories", methods=["GET"])
 @login_required()
+@swag_from("../docs/products_categories_list.yml")
 def list_product_categories_route():
     """
     List all product categories.
@@ -137,6 +140,7 @@ def list_product_categories_route():
 @products_bp.route("/categories", methods=["POST"])
 @login_required()
 @role_required(['admin', 'salon_owner'])
+@swag_from("../docs/products_categories_create.yml")
 def create_product_category_route():
     """
     Create a new product category.
@@ -163,6 +167,7 @@ def create_product_category_route():
     
 @products_bp.route("/categories/<category_id>", methods=["GET"])
 @login_required()
+@swag_from("../docs/products_categories_get.yml")
 def get_product_category_route(category_id):
     """
     Get a product category by ID.
