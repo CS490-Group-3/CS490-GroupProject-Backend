@@ -3,6 +3,7 @@ Export Service for generating CSV and PDF reports from analytics data.
 """
 import csv
 import io
+import json
 from typing import Dict, List, Any
 from datetime import datetime
 
@@ -67,7 +68,7 @@ class ExportService:
     @staticmethod
     def export_metrics_to_csv(metrics_type: str, data: Dict) -> tuple:
         """
-        Export specific metrics type to CSV with proper formatting.
+        Export specific metrics type to CSV with proper table format.
         
         Args:
             metrics_type: Type of metrics (engagement, appointments, revenue, etc.)
@@ -76,38 +77,201 @@ class ExportService:
         Returns:
             Tuple of (csv_string, filename)
         """
-        filename = f"{metrics_type}_metrics_{datetime.now().strftime('%Y-%m-%d')}.csv"
-
-        # If we have a proper daily_breakdown table, export JUST that as a clean CSV
-        daily = data.get("daily_breakdown")
-        if isinstance(daily, list) and daily and isinstance(daily[0], dict):
-            output = io.StringIO()
-            writer = csv.writer(output)
-            headers = list(daily[0].keys())
-            writer.writerow(headers)
-            for row in daily:
-                writer.writerow([row.get(h, "") for h in headers])
-            csv_string = output.getvalue()
-            output.close()
-            return csv_string, filename
-
-        # Fallback: flatten the metrics dict into Metric,Value rows
+        filename = f"metrics_{metrics_type}_{datetime.now().strftime('%Y-%m-%d')}.csv"
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["Metric", "Value"])
 
-        def flatten(prefix: str, obj: Any):
-            if isinstance(obj, dict):
-                for k, v in obj.items():
-                    new_prefix = f"{prefix}.{k}" if prefix else k
-                    flatten(new_prefix, v)
-            elif isinstance(obj, list):
-                # Summarise lists by length; detailed structures can be seen in UI
-                writer.writerow([prefix, f"List ({len(obj)} items)"])
+        # Helper function to format values for CSV
+        def format_value(value):
+            if value is None:
+                return ""
+            if isinstance(value, (int, float)):
+                return value
+            if isinstance(value, dict):
+                return json.dumps(value)
+            if isinstance(value, list):
+                return ", ".join(str(v) for v in value)
+            return str(value)
+
+        # Handle different metrics types with proper CSV table format
+        if metrics_type == "platform":
+            # Platform metrics: Create a single row table
+            writer.writerow([
+                "Date",
+                "Total Users",
+                "Customers",
+                "Salon Owners", 
+                "Barbers",
+                "Admins",
+                "Total Salons",
+                "Verified Salons",
+                "Total Appointments",
+                "Completed Appointments",
+                "Total Revenue"
+            ])
+            
+            users = data.get("users", {})
+            salons = data.get("salons", {})
+            appointments = data.get("appointments", {})
+            revenue = data.get("revenue", {})
+            
+            by_role = users.get("by_role", {}) if isinstance(users, dict) else {}
+            
+            writer.writerow([
+                data.get("date", datetime.now().strftime('%Y-%m-%d')),
+                users.get("total", 0) if isinstance(users, dict) else users,
+                by_role.get("customer", 0),
+                by_role.get("salon_owner", 0),
+                by_role.get("barber", 0),
+                by_role.get("admin", 0),
+                salons.get("total", 0) if isinstance(salons, dict) else salons,
+                salons.get("verified", 0) if isinstance(salons, dict) else 0,
+                appointments.get("total", 0) if isinstance(appointments, dict) else appointments,
+                appointments.get("completed", 0) if isinstance(appointments, dict) else 0,
+                revenue.get("total", 0) if isinstance(revenue, dict) else revenue
+            ])
+            
+        elif metrics_type == "loyalty":
+            # Loyalty metrics: Use daily breakdown as main table, add summary if available
+            daily = data.get("daily_breakdown", [])
+            summary = data.get("summary", {})
+            
+            if daily and isinstance(daily, list) and len(daily) > 0:
+                # Use daily breakdown as the main table
+                writer.writerow(["Date", "Loyalty Points Earned", "Loyalty Points Redeemed"])
+                for row in daily:
+                    writer.writerow([
+                        row.get("date", ""),
+                        format_value(row.get("points_earned", row.get("loyalty_points_earned", 0))),
+                        format_value(row.get("points_redeemed", row.get("loyalty_points_redeemed", 0)))
+                    ])
             else:
-                writer.writerow([prefix, obj])
-
-        flatten("", {k: v for k, v in data.items() if k != "daily_breakdown"})
+                # Fallback: summary only
+                writer.writerow([
+                    "Total Points Earned",
+                    "Total Points Redeemed", 
+                    "Net Points",
+                    "Active Members"
+                ])
+                writer.writerow([
+                    format_value(summary.get("total_points_earned", data.get("total_points_earned", 0))),
+                    format_value(summary.get("total_points_redeemed", data.get("total_points_redeemed", 0))),
+                    format_value(summary.get("net_points", data.get("net_points", 0))),
+                    format_value(summary.get("active_members", data.get("active_members", 0)))
+                ])
+                    
+        elif metrics_type == "engagement":
+            # Engagement metrics: Use daily breakdown as main table
+            daily = data.get("daily_breakdown", [])
+            summary = data.get("summary", {})
+            
+            if daily and isinstance(daily, list) and len(daily) > 0:
+                # Use daily breakdown as the main table
+                exclude_fields = {"id", "salon_id", "created_at", "updated_at"}
+                headers = [h for h in daily[0].keys() if h not in exclude_fields]
+                formatted_headers = [h.replace("_", " ").title() for h in headers]
+                writer.writerow(formatted_headers)
+                for row in daily:
+                    writer.writerow([format_value(row.get(h, "")) for h in headers])
+            else:
+                # Fallback: summary only
+                writer.writerow([
+                    "Total New Customers",
+                    "Total Appointments",
+                    "Total Completed Appointments",
+                    "Total Revenue",
+                    "Total Returning Customers",
+                    "Average Rating",
+                    "Avg Daily Appointments",
+                    "Avg Daily Revenue",
+                    "Engagement Rate"
+                ])
+                writer.writerow([
+                    format_value(summary.get("total_new_customers", data.get("total_new_customers", 0))),
+                    format_value(summary.get("total_appointments", data.get("total_appointments", 0))),
+                    format_value(summary.get("total_completed_appointments", data.get("total_completed_appointments", 0))),
+                    format_value(summary.get("total_revenue", data.get("total_revenue", 0))),
+                    format_value(summary.get("total_returning_customers", data.get("total_returning_customers", 0))),
+                    format_value(summary.get("average_rating", data.get("average_rating", 0))),
+                    format_value(summary.get("avg_daily_appointments", data.get("avg_daily_appointments", 0))),
+                    format_value(summary.get("avg_daily_revenue", data.get("avg_daily_revenue", 0))),
+                    format_value(summary.get("engagement_rate", data.get("engagement_rate", 0)))
+                ])
+        
+        elif metrics_type == "revenue":
+            # Revenue metrics: Use daily breakdown if available, otherwise summary
+            daily = data.get("daily_breakdown", [])
+            period = data.get("period", {})
+            
+            if daily and isinstance(daily, list) and len(daily) > 0:
+                # Use daily breakdown as the main table
+                exclude_fields = {"id", "salon_id", "created_at", "updated_at"}
+                headers = [h for h in daily[0].keys() if h not in exclude_fields]
+                formatted_headers = [h.replace("_", " ").title() for h in headers]
+                writer.writerow(formatted_headers)
+                for row in daily:
+                    writer.writerow([format_value(row.get(h, "")) for h in headers])
+            else:
+                # Fallback: summary metrics
+                writer.writerow([
+                    "Start Date",
+                    "End Date",
+                    "Total Revenue",
+                    "Average Daily Revenue"
+                ])
+                writer.writerow([
+                    format_value(period.get("start_date", "")),
+                    format_value(period.get("end_date", "")),
+                    format_value(data.get("total_revenue", 0)),
+                    format_value(data.get("avg_daily_revenue", 0))
+                ])
+        
+        elif metrics_type == "retention":
+            # Retention metrics: Summary table
+            period = data.get("period", {})
+            writer.writerow([
+                "Start Date",
+                "End Date",
+                "Total Customers",
+                "Active Customers",
+                "New Customers",
+                "Returning Customers",
+                "Repeat Customers",
+                "Retention Rate (%)",
+                "Churn Rate (%)"
+            ])
+            writer.writerow([
+                format_value(period.get("start_date", "")),
+                format_value(period.get("end_date", "")),
+                format_value(data.get("total_customers", 0)),
+                format_value(data.get("active_customers", 0)),
+                format_value(data.get("new_customers", 0)),
+                format_value(data.get("returning_customers", 0)),
+                format_value(data.get("repeat_customers", 0)),
+                format_value(data.get("retention_rate", 0)),
+                format_value(data.get("churn_rate", 0))
+            ])
+                    
+        else:
+            # For other metrics types (appointments, etc.), use daily breakdown if available
+            daily = data.get("daily_breakdown", [])
+            if daily and isinstance(daily, list) and len(daily) > 0:
+                # Use daily breakdown as the main table
+                exclude_fields = {"id", "salon_id", "created_at", "updated_at"}
+                headers = [h for h in daily[0].keys() if h not in exclude_fields]
+                formatted_headers = [h.replace("_", " ").title() for h in headers]
+                writer.writerow(formatted_headers)
+                for row in daily:
+                    writer.writerow([format_value(row.get(h, "")) for h in headers])
+            else:
+                # Fallback: create a simple key-value table from summary data
+                summary_data = {k: v for k, v in data.items() if k not in ["daily_breakdown", "period"]}
+                if summary_data:
+                    # Write as a proper table with one row
+                    headers = list(summary_data.keys())
+                    formatted_headers = [h.replace("_", " ").title() for h in headers]
+                    writer.writerow(formatted_headers)
+                    writer.writerow([format_value(summary_data.get(h, "")) for h in headers])
 
         csv_string = output.getvalue()
         output.close()
