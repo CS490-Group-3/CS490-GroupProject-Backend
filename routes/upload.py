@@ -24,16 +24,21 @@ def upload_file(file_type):
 
         file.filename = secure_filename(file.filename)
         if file_type == "profile":
-            url = StorageService.upload_user_profile_image(file, user_id)
+            result = StorageService.upload_user_profile_image(file, user_id)
+            return jsonify({
+                "message": "File uploaded successfully",
+                "filepath": result["filepath"],
+                "url": result["public_url"],
+                "file_type": file_type
+            }), 200
         else:
             url = StorageService.upload_file(file, salon_id, file_type)
-
-        return jsonify({
-            "message": "File uploaded successfully",
-            "filepath": url["filepath"],
-            "url": url["signed_url"],
-            "file_type": file_type
-        }), 200
+            return jsonify({
+                "message": "File uploaded successfully",
+                "filepath": url["filepath"],
+                "url": url["signed_url"],
+                "file_type": file_type
+            }), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
