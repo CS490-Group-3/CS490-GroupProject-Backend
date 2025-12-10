@@ -49,6 +49,8 @@ def create_app():
     app.register_blueprint(loyalty_bp)
     app.register_blueprint(owner_bp)
 
+    
+
     # Error handlers - safety net for routes without @auto_log_errors decorator
     @app.errorhandler(404)
     def not_found(error):
