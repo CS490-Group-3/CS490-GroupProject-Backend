@@ -129,9 +129,100 @@ class AppointmentService:
         return False
 
     @staticmethod
+    def _auto_complete_past_appointments(rows: List[dict]) -> List[dict]:
+        """
+        Automatically mark appointments as completed if they're past their end time.
+        This runs on-demand when appointments are fetched (no cron jobs needed).
+        Updates the rows in place and returns them.
+        """
+        if not rows:
+            return rows
+        
+        try:
+            now = datetime.now(timezone.utc)
+            now_iso = now.isoformat()
+            from services.loyalty_service import LoyaltyService
+            
+            appointments_to_complete = []
+            
+            # Check each appointment row
+            for row in rows:
+                status = row.get("status", "").lower()
+                end_at = row.get("end_at")
+                apt_id = row.get("id")
+                
+                # Only auto-complete if:
+                # - Status is "scheduled" or "confirmed" (NOT cancelled, no_show, denied, or already completed)
+                # - Has an end_at time
+                # - End time has passed
+                # 
+                # IMPORTANT: We do NOT touch appointments that are:
+                # - "cancelled" - already cancelled, leave it alone
+                # - "no_show" - barber already marked as no-show, leave it alone
+                # - "denied" - appointment was denied, leave it alone
+                # - "completed" - already completed, leave it alone
+                if (status in ["scheduled", "confirmed"] and 
+                    end_at and 
+                    apt_id):
+                    
+                    try:
+                        # Parse end_at to datetime
+                        if isinstance(end_at, str):
+                            end_dt = datetime.fromisoformat(end_at.replace("Z", "+00:00"))
+                        else:
+                            end_dt = end_at
+                        
+                        if end_dt.tzinfo is None:
+                            end_dt = end_dt.replace(tzinfo=timezone.utc)
+                        else:
+                            end_dt = end_dt.astimezone(timezone.utc)
+                        
+                        # Check if end time has passed
+                        if end_dt < now:
+                            appointments_to_complete.append(apt_id)
+                    except Exception:
+                        # If we can't parse the date, skip this appointment
+                        continue
+            
+            # Batch update all appointments that need to be completed
+            if appointments_to_complete:
+                update_response = (
+                    supabase.table("appointments")
+                    .update({
+                        "status": "completed",
+                        "updated_at": now_iso
+                    })
+                    .in_("id", appointments_to_complete)
+                    .execute()
+                )
+                
+                if not getattr(update_response, "error", None) and update_response.data:
+                    # Update the rows in place
+                    for row in rows:
+                        if row.get("id") in appointments_to_complete:
+                            row["status"] = "completed"
+                            row["updated_at"] = now_iso
+                    
+                    # Award loyalty points for each completed appointment
+                    for apt_id in appointments_to_complete:
+                        try:
+                            LoyaltyService.award_points_for_completed_appointment(apt_id)
+                        except Exception as e:
+                            # Log but don't fail - points can be awarded later if needed
+                            ErrorLoggingService.log_exception(e, severity='medium')
+        except Exception as e:
+            # Don't fail the whole request if auto-completion fails
+            ErrorLoggingService.log_exception(e, severity='medium')
+        
+        return rows
+    
+    @staticmethod
     def _hydrate_appointments(rows: List[dict]) -> List[dict]:
         if not rows:
             return []
+        
+        # Auto-complete appointments that are past their end time
+        rows = AppointmentService._auto_complete_past_appointments(rows)
 
         salon_ids = {row["salon_id"] for row in rows if row.get("salon_id")}
         service_ids = {row["service_id"] for row in rows if row.get("service_id")}
@@ -968,6 +1059,9 @@ class AppointmentService:
         current, error = AppointmentService.get_by_id(appointment_id, user=user)
         if error:
             return None, error
+        
+        if not current or not isinstance(current, dict):
+            return None, "Appointment not found or invalid"
 
         role = user.get("role")
         uid = user.get("sub")
@@ -976,23 +1070,90 @@ class AppointmentService:
         elif role == "salon_owner":
             salons = supabase.table("salons").select("id").eq("owner_id", uid).execute()
             owned = {s["id"] for s in (salons.data or [])}
-            if current["salon_id"] not in owned:
+            if current.get("salon_id") not in owned:
                 return None, "Forbidden"
         elif role == "barber":
             barber_id, _ = AuthService.get_barber_id(uid)
-            if not barber_id or current["barber_id"] != barber_id:
+            if not barber_id or current.get("barber_id") != barber_id:
                 return None, "Forbidden"
         else:
             return None, "Forbidden"
 
+        # Handle loyalty points based on status change
+        from services.loyalty_service import LoyaltyService
+        
+        # Get current status before update to detect transitions
+        old_status = current.get("status", "").lower()
+        new_status = status.lower()
+        
+        # If marking as no-show, remove any loyalty points that were awarded
+        if new_status == "no_show" and old_status != "no_show":
+            # Find and remove loyalty transactions for this appointment
+            try:
+                loyalty_trans_response = supabase.table("loyalty_transactions")\
+                    .select("id, points, user_id, salon_id")\
+                    .eq("appointment_id", appointment_id)\
+                    .eq("transaction_type", "earned")\
+                    .execute()
+                
+                if getattr(loyalty_trans_response, "error", None):
+                    # Log error but continue with status update
+                    ErrorLoggingService.log_exception(
+                        Exception(f"Error fetching loyalty transactions: {loyalty_trans_response.error.message}"),
+                        severity='medium'
+                    )
+                elif loyalty_trans_response and loyalty_trans_response.data:
+                    transactions = loyalty_trans_response.data or []
+                    # Only remove points from "earned" transactions that haven't been removed yet
+                    # Check if there are any removal transactions (redeemed with no-show description) to avoid double-removal
+                    removed_check = supabase.table("loyalty_transactions")\
+                        .select("id, description")\
+                        .eq("appointment_id", appointment_id)\
+                        .eq("transaction_type", "redeemed")\
+                        .ilike("description", "%no-show%")\
+                        .execute()  # Check for no-show removals
+                    
+                    already_removed = len(removed_check.data or []) > 0
+                    
+                    if not already_removed and transactions:
+                        for trans in transactions:
+                            trans_id = trans.get("id")
+                            points = trans.get("points", 0)
+                            user_id = trans.get("user_id")
+                            salon_id = trans.get("salon_id")
+                            
+                            if trans_id and points > 0 and user_id and salon_id:
+                                # Remove the points using the dedicated method
+                                success, error = LoyaltyService.remove_points_for_no_show(
+                                    user_id=user_id,
+                                    salon_id=salon_id,
+                                    points=points,
+                                    appointment_id=appointment_id,
+                                    description=f"Points removed due to no-show (original transaction: {trans_id})"
+                                )
+                                if not success:
+                                    # Log error but continue - status update should still succeed
+                                    ErrorLoggingService.log_exception(
+                                        Exception(f"Failed to remove loyalty points: {error}"),
+                                        severity='medium'
+                                    )
+            except Exception as e:
+                # Log but don't fail - the status update should still succeed
+                # We want to mark the appointment as no-show even if loyalty point removal fails
+                ErrorLoggingService.log_exception(e, severity='high')
+                # Don't return error - let the status update proceed
+        
+        # Update appointment status
         update = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}
         response = supabase.table("appointments").update(update).eq("id", appointment_id).execute()
         if getattr(response, "error", None) or not response.data:
             return None, getattr(response, "error", None).message if getattr(response, "error", None) else "Update failed"
         
         # Award loyalty points when appointment is marked as completed
-        if status == "completed":
-            from services.loyalty_service import LoyaltyService
+        # This handles both initial completion and re-completion after no-show
+        if new_status == "completed" and old_status != "completed":
+            # award_points_for_completed_appointment will check for existing transactions
+            # and handle re-awarding if points were previously removed
             LoyaltyService.award_points_for_completed_appointment(appointment_id)
         
         return AppointmentService.get_by_id(appointment_id, user=user)
@@ -1205,6 +1366,9 @@ class AppointmentService:
                 .eq("customer_id", customer_id)
             )
             query = AppointmentService._apply_filters(query, when, status)
+            # Exclude cancelled appointments from past results
+            if when == "past":
+                query = query.neq("status", "cancelled")
             
             # For upcoming: always closest first (ascending). For past: use sort_order
             if when == "upcoming":
