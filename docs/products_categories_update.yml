@@ -1,0 +1,95 @@
+---
+tags:
+  - Products
+summary: Update a product category
+description: >
+  Update an existing product category. Only admins can update categories.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: category_id
+    type: string
+    format: uuid
+    required: true
+    description: Category UUID
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+          example: "Hair Care"
+        description:
+          type: string
+          maxLength: 500
+          example: "Products for hair care and styling"
+        parent_category_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional parent category for hierarchical structure
+
+responses:
+  200:
+    description: Category updated successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Category updated successfully"
+        category:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            description:
+              type: string
+            parent_category_id:
+              type: string
+              format: uuid
+              nullable: true
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+  400:
+    description: Validation error or category in use
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Product category with this name already exists"
+
+  401:
+    description: Unauthorized
+  403:
+    description: Forbidden - admin role required
+  404:
+    description: Category not found
+  500:
+    description: Server error
+

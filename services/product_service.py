@@ -195,3 +195,81 @@ class ProductService:
             return None, f"Authentication error: {str(auth_error)}"
         except Exception as e:
             return None, str(e)
+    @staticmethod
+    def update_product_category(
+        category_id: str,
+        data: ProductCategoryUpdateRequest
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Update an existing product category.
+
+        Args:
+            category_id: ID of the category to update
+            data: Dictionary of fields to update
+
+        Returns:
+            Tuple containing the updated category dict or None, and an error message or None
+        """
+        try:
+            # Check if category exists
+            existing = supabase.table("product_categories").select("*").eq("id", category_id).execute()
+            if not existing.data:
+                return None, "Product category not found"
+            
+            # If name is being updated, check for duplicates (excluding current category)
+            if data.name:
+                check_response = supabase.table("product_categories").select("*").ilike("name", data.name).neq("id", category_id).execute()
+                if check_response.data:
+                    return None, "Product category with this name already exists"
+            
+            # Update the category
+            update_dict = data.dict(exclude_unset=True, exclude={"id"})
+            if not update_dict:
+                return None, "No fields to update"
+            
+            response = supabase.table("product_categories").update(update_dict).eq("id", category_id).execute()
+            if not response.data:
+                return None, "Failed to update product category"
+
+            updated_category = response.data[0] if response.data else None
+            return updated_category, None
+        except AuthApiError as auth_error:
+            return None, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return None, str(e)
+    @staticmethod
+    def delete_product_category(
+        category_id: str
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Delete a product category.
+
+        Args:
+            category_id: ID of the category to delete
+
+        Returns:
+            Tuple containing success boolean and an error message or None
+        """
+        try:
+            # Check if category exists
+            existing = supabase.table("product_categories").select("*").eq("id", category_id).execute()
+            if not existing.data:
+                return False, "Product category not found"
+            
+            # Check if any products are using this category
+            products_check = supabase.table("products").select("id").eq("category_id", category_id).limit(1).execute()
+            if products_check.data and len(products_check.data) > 0:
+                return False, "Cannot delete category: products are still using this category"
+            
+            # Check if any categories have this as parent
+            children_check = supabase.table("product_categories").select("id").eq("parent_category_id", category_id).limit(1).execute()
+            if children_check.data and len(children_check.data) > 0:
+                return False, "Cannot delete category: it has child categories. Please delete or reassign child categories first"
+            
+            # Delete the category
+            response = supabase.table("product_categories").delete().eq("id", category_id).execute()
+            return True, None
+        except AuthApiError as auth_error:
+            return False, f"Authentication error: {str(auth_error)}"
+        except Exception as e:
+            return False, str(e)

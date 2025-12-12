@@ -1,0 +1,53 @@
+---
+tags:
+  - Products
+summary: Delete a product category
+description: >
+  Delete a product category. Only admins can delete categories.
+  Cannot delete if products are using it or if it has child categories.
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    type: string
+    required: true
+    description: Bearer access token
+    example: "Bearer eyJhbGciOi..."
+
+  - in: path
+    name: category_id
+    type: string
+    format: uuid
+    required: true
+    description: Category UUID
+    example: "a1234567-89ab-cdef-0123-456789abcdef"
+
+responses:
+  200:
+    description: Category deleted successfully
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Category deleted successfully"
+
+  400:
+    description: Cannot delete category
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Cannot delete category: products are still using this category"
+
+  401:
+    description: Unauthorized
+  403:
+    description: Forbidden - admin role required
+  404:
+    description: Category not found
+  500:
+    description: Server error
+
