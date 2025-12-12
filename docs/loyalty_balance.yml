@@ -38,6 +38,10 @@ responses:
                 type: integer
               lifetime_points_redeemed:
                 type: integer
+              pending_points:
+                type: integer
+                description: Points pending from completed appointments not yet delivered
+                default: 0
               activity:
                 type: array
                 items:
