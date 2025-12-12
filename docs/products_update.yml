@@ -4,8 +4,10 @@ tags:
 summary: Update a product
 description: >
   Update product details. Only salon owners can update products for their salon.
+  Supports both JSON and multipart/form-data (for image uploads).
 consumes:
   - application/json
+  - multipart/form-data
 produces:
   - application/json
 parameters:
@@ -24,9 +26,56 @@ parameters:
     description: Product UUID
     example: "a1234567-89ab-cdef-0123-456789abcdef"
 
+  - in: formData
+    name: name
+    type: string
+    required: false
+    description: Product name (when using multipart/form-data)
+    example: "Hair Gel"
+  
+  - in: formData
+    name: description
+    type: string
+    required: false
+    description: Product description (when using multipart/form-data)
+    example: "Premium styling gel"
+  
+  - in: formData
+    name: price
+    type: string
+    required: false
+    description: Product price (when using multipart/form-data)
+    example: "15.99"
+  
+  - in: formData
+    name: category_id
+    type: string
+    format: uuid
+    required: false
+    description: Category ID (when using multipart/form-data)
+  
+  - in: formData
+    name: stock_quantity
+    type: integer
+    required: false
+    description: Stock quantity (when using multipart/form-data)
+  
+  - in: formData
+    name: is_active
+    type: boolean
+    required: false
+    description: Whether product is active (when using multipart/form-data)
+  
+  - in: formData
+    name: file
+    type: file
+    required: false
+    description: Product image file (when using multipart/form-data)
+
   - in: body
     name: body
-    required: true
+    required: false
+    description: JSON body (when not using multipart/form-data)
     schema:
       type: object
       properties:
@@ -37,15 +86,19 @@ parameters:
           type: string
           example: "Premium styling gel"
         price:
-          type: number
-          format: float
-          example: 15.99
+          type: string
+          example: "15.99"
         category_id:
           type: string
           format: uuid
+        stock_quantity:
+          type: integer
         is_active:
           type: boolean
           example: true
+        image_url:
+          type: string
+          description: Image URL (if updating without uploading new file)
 
 responses:
   200:

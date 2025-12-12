@@ -98,6 +98,7 @@ def get_product_route(product_id):
 def update_product_route(product_id):
     """
     Update a product.
+    Supports both JSON and multipart/form-data (for image uploads).
     """
     try:
         user_id = get_current_user().get('sub')
@@ -105,9 +106,24 @@ def update_product_route(product_id):
         print("Owned salon ID:", salon_id)
         if not salon_id:
             return jsonify({"error": "User does not own a salon"}), 403
-        json_data = request.get_json()
-        if not json_data:
-            return jsonify({"error": "Invalid JSON body"}), 400
+        
+        # Handle both JSON and multipart/form-data
+        if request.content_type and "multipart/form-data" in request.content_type:
+            json_data = request.form.to_dict()
+            file = request.files.get("file")
+            if file:
+                # Get product name for filename (use existing name if not updating)
+                product_result, _ = ProductService.get_product(product_id)
+                product_name = json_data.get("name") or (product_result.get("name") if product_result else "product")
+                original_ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "jpg"
+                file.filename = secure_filename(f"{product_name}.{original_ext}")
+                upload_url = StorageService.upload_file(file, salon_id, "product")
+                json_data["image_url"] = upload_url['filepath']
+        else:
+            json_data = request.get_json()
+            if not json_data:
+                return jsonify({"error": "Invalid request body"}), 400
+        
         print("Update data:", json_data)
         data = ProductUpdateRequest(**json_data)
         if not data:
@@ -117,7 +133,7 @@ def update_product_route(product_id):
             return jsonify({"error": error}), 400
         return jsonify({"message": "Product updated successfully", "product": ProductResponse.model_validate(result).model_dump()}), 200
     except ValidationError as ve:
-        return jsonify({"error": ve.errors()}), 400
+        return jsonify({"error": "Validation failed", "details": ve.errors()}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -179,5 +195,49 @@ def get_product_category_route(category_id):
         if not category:
             return jsonify({"error": "Category not found"}), 404
         return jsonify({"data": category[0]}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@products_bp.route("/categories/<category_id>", methods=["PATCH"])
+@login_required()
+@role_required(['admin'])
+@swag_from("../docs/products_categories_update.yml")
+def update_product_category_route(category_id):
+    """
+    Update a product category (admin only).
+    """
+    try:
+        json_data = request.get_json()
+        if not json_data:
+            return jsonify({"error": "Invalid JSON body"}), 400
+        
+        data = ProductCategoryUpdateRequest(**json_data)
+        if not data:
+            return jsonify({"error": "Invalid category data"}), 400
+        
+        category, error = ProductService.update_product_category(category_id, data)
+        if error:
+            return jsonify({"error": error}), 400
+        
+        return jsonify({"message": "Category updated successfully", "category": category}), 200
+    except ValidationError as ve:
+        return jsonify({"error": "Validation failed", "details": ve.errors()}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@products_bp.route("/categories/<category_id>", methods=["DELETE"])
+@login_required()
+@role_required(['admin'])
+@swag_from("../docs/products_categories_delete.yml")
+def delete_product_category_route(category_id):
+    """
+    Delete a product category (admin only).
+    """
+    try:
+        success, error = ProductService.delete_product_category(category_id)
+        if error:
+            return jsonify({"error": error}), 400
+        
+        return jsonify({"message": "Category deleted successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
