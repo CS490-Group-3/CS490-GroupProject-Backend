@@ -61,7 +61,8 @@ def get_loyalty_balance():
                     "points": trans.get("points"),
                     "description": trans.get("description"),
                     "date": trans_date,
-                    "appointmentId": trans.get("appointment_id")
+                    "appointmentId": trans.get("appointment_id"),
+                    "appointmentDate": trans.get("appointment_date")
                 })
             
             # Don't calculate pending points here - return 0 initially, will be calculated async on frontend
@@ -179,12 +180,14 @@ def get_loyalty_rewards():
         if not program or not program.get("is_active"):
             return jsonify({
                 "pointThreshold": 100,
-                "rewardDiscount": 10
+                "rewardDiscount": 10,
+                "pointsPerDollar": 1.0
             }), 200  # Return defaults if no program
         
         return jsonify({
             "pointThreshold": program.get("min_points_for_redemption", 100),
-            "rewardDiscount": program.get("discount", 10)
+            "rewardDiscount": program.get("discount", 10),
+            "pointsPerDollar": float(program.get("points_per_dollar", 1.0))
         }), 200
         
     except Exception as e:
