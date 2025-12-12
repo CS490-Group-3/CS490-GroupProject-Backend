@@ -250,7 +250,7 @@ class ExportService:
                 format_value(data.get("repeat_customers", 0)),
                 format_value(data.get("retention_rate", 0)),
                 format_value(data.get("churn_rate", 0))
-            ])
+                ])
                     
         else:
             # For other metrics types (appointments, etc.), use daily breakdown if available

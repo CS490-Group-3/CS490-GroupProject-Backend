@@ -312,15 +312,41 @@ class LoyaltyService:
                 salon = trans.get("salons")
                 appointment = trans.get("appointments")
                 
+                # Format description to remove UUID and show appointment date if available
+                description = trans.get("description", "")
+                appointment_date = None
+                if isinstance(appointment, dict) and appointment.get("start_at"):
+                    try:
+                        appt_date_str = appointment["start_at"]
+                        if appt_date_str:
+                            # Handle ISO format with or without timezone
+                            if appt_date_str.endswith("Z"):
+                                appt_date_str = appt_date_str[:-1] + "+00:00"
+                            appt_date = datetime.fromisoformat(appt_date_str)
+                            appointment_date = appt_date.strftime("%b %d, %Y")
+                    except Exception:
+                        pass
+                
+                # Clean up description - remove UUID references and add appointment date
+                if "original transaction:" in description.lower() and appointment_date:
+                    # For no-show removals, show appointment date instead of UUID
+                    description = f"Points removed due to no-show (appointment on {appointment_date})"
+                elif "original transaction:" in description.lower():
+                    # If no appointment date, just remove the UUID part
+                    description = description.split("(original transaction:")[0].strip()
+                    if description.endswith(")"):
+                        description = description[:-1].strip()
+                
                 formatted_transactions.append({
                     "id": trans.get("id"),
                     "salon_id": trans.get("salon_id"),
                     "salon_name": salon.get("name") if isinstance(salon, dict) else None,
                     "points": trans.get("points"),
                     "transaction_type": trans.get("transaction_type"),
-                    "description": trans.get("description"),
+                    "description": description,
                     "date": trans.get("created_at"),
                     "appointment_id": trans.get("appointment_id"),
+                    "appointment_date": appointment_date,
                     "balance_after": trans.get("balance_after"),
                 })
             
@@ -480,6 +506,87 @@ class LoyaltyService:
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
             return False, f"Failed to earn points: {str(e)}"
+    
+    @staticmethod
+    def remove_points_for_no_show(
+        user_id: str,
+        salon_id: str,
+        points: int,
+        appointment_id: str,
+        description: Optional[str] = None
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Remove loyalty points that were awarded for an appointment that was marked as no-show.
+        
+        Args:
+            user_id: User ID
+            salon_id: Salon ID
+            points: Points to remove (must be positive)
+            appointment_id: Appointment ID that the points were awarded for
+            description: Optional description
+            
+        Returns:
+            Tuple of (success, error_message)
+        """
+        try:
+            if points <= 0:
+                return False, "Points to remove must be positive"
+            
+            # Get balance
+            balance, error = LoyaltyService._get_or_create_balance(user_id, salon_id)
+            if error:
+                return False, error
+            
+            old_balance = balance.get("points_balance", 0)
+            # Don't allow negative balance
+            new_balance = max(0, old_balance - points)
+            balance_id = balance.get("id")
+            
+            # Update balance (don't modify lifetime_points_earned - we're just removing from current balance)
+            update_response = supabase.table("loyalty_balances")\
+                .update({
+                    "points_balance": new_balance,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })\
+                .eq("id", balance_id)\
+                .execute()
+            
+            if getattr(update_response, "error", None):
+                return False, update_response.error.message
+            
+            # Create transaction record for the removal
+            # Use "redeemed" transaction type since "removed" may not be a valid enum
+            # The description will indicate it's a no-show removal
+            transaction_data = {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "salon_id": salon_id,
+                "transaction_type": "redeemed",  # Using "redeemed" as it's a valid type
+                "points": -points,  # Negative to indicate removal
+                "appointment_id": appointment_id,
+                "balance_after": new_balance,
+                "description": description or f"Removed {points} points due to no-show"
+            }
+            
+            trans_response = supabase.table("loyalty_transactions")\
+                .insert(transaction_data)\
+                .execute()
+            
+            if getattr(trans_response, "error", None):
+                # Rollback balance update if transaction creation fails
+                supabase.table("loyalty_balances")\
+                    .update({
+                        "points_balance": old_balance,
+                    })\
+                    .eq("id", balance_id)\
+                    .execute()
+                return False, trans_response.error.message
+            
+            return True, None
+            
+        except Exception as e:
+            ErrorLoggingService.log_exception(e, severity='high')
+            return False, f"Failed to remove points: {str(e)}"
     
     @staticmethod
     def redeem_points(
@@ -1025,16 +1132,40 @@ class LoyaltyService:
             payment = payment_response.data
             payment_amount = float(payment.get("amount", 0))
             
-            # Check if points were already awarded (check for existing transaction)
-            existing_trans = supabase.table("loyalty_transactions")\
-                .select("id")\
+            # Check if points were already awarded and NOT removed
+            # We need to check if there's a valid "earned" transaction that hasn't been fully reversed
+            existing_earned = supabase.table("loyalty_transactions")\
+                .select("id, points")\
                 .eq("appointment_id", appointment_id)\
                 .eq("transaction_type", "earned")\
                 .execute()
             
-            if existing_trans.data:
-                # Points already awarded
+            # Check for removed points (stored as "redeemed" transactions with no-show in description)
+            existing_removed = supabase.table("loyalty_transactions")\
+                .select("id, points, description")\
+                .eq("appointment_id", appointment_id)\
+                .eq("transaction_type", "redeemed")\
+                .ilike("description", "%no-show%")\
+                .execute()  # Only count no-show removals, not regular redemptions
+            
+            # Calculate net points: earned - removed
+            earned_points = sum([t.get("points", 0) for t in (existing_earned.data or [])])
+            removed_points = abs(sum([t.get("points", 0) for t in (existing_removed.data or [])]))  # removed points are negative, so abs()
+            
+            # Track original points amount for re-awarding if needed
+            original_points_amount = earned_points if earned_points > 0 else None
+            
+            # If points were already awarded and not fully removed, don't award again
+            net_points = earned_points - removed_points
+            if net_points > 0:
+                # Points already awarded and still valid (not fully removed)
+                # This prevents duplicate awards
                 return True, None
+            
+            # If net_points <= 0, it means either:
+            # 1. No points were ever awarded (earned_points == 0)
+            # 2. All points were removed (removed_points >= earned_points)
+            # In both cases, we need to award points (either initial or re-award)
             
             # Get loyalty program
             loyalty_program, error = LoyaltyService.get_loyalty_program(salon_id)
@@ -1047,19 +1178,32 @@ class LoyaltyService:
             
             # Calculate points
             points_per_dollar = float(loyalty_program.get("points_per_dollar", 1.0))
-            points_earned = LoyaltyService.calculate_points_earned(payment_amount, points_per_dollar)
+            calculated_points = LoyaltyService.calculate_points_earned(payment_amount, points_per_dollar)
             
-            if points_earned <= 0:
+            if calculated_points <= 0:
                 return True, None  # No points to award
             
-            # Award points
+            # Determine points to award:
+            # - If there were original points that were removed, re-award the same amount
+            # - Otherwise, award the calculated amount
+            if original_points_amount and original_points_amount > 0 and removed_points >= original_points_amount:
+                # Re-awarding after no-show was reversed
+                points_earned = original_points_amount
+                description_suffix = " (re-awarded after no-show reversal)"
+            else:
+                # Initial award
+                points_earned = calculated_points
+                description_suffix = ""
+            
+            # Award points (this will create a new "earned" transaction)
+            # If points were previously removed, this effectively re-awards them
             success, error = LoyaltyService.earn_points(
                 user_id=user_id,
                 salon_id=salon_id,
                 points=points_earned,
                 appointment_id=appointment_id,
                 payment_id=payment["id"],
-                description=f"Earned {points_earned} points from completed appointment"
+                description=f"Earned {points_earned} points from completed appointment{description_suffix}"
             )
             
             return success, error
