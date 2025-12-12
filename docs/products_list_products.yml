@@ -41,12 +41,40 @@ responses:
               id:
                 type: string
                 format: uuid
+              salon_id:
+                type: string
+                format: uuid
+              category_id:
+                type: string
+                format: uuid
+                nullable: true
               name:
                 type: string
+              description:
+                type: string
+                nullable: true
               price:
                 type: number
                 format: float
-              # Add other properties as needed
+              stock_quantity:
+                type: integer
+                nullable: true
+              image_url:
+                type: string
+                nullable: true
+              is_active:
+                type: boolean
+              created_at:
+                type: string
+                format: date-time
+              updated_at:
+                type: string
+                format: date-time
+                nullable: true
+        message:
+          type: string
+          description: Present when no products found
+          example: "No products found"
   400:
     description: Bad request - missing salon_id
   500:

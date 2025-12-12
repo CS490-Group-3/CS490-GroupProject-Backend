@@ -29,9 +29,34 @@ parameters:
           description: Order UUID
           example: "a1234567-89ab-cdef-0123-456789abcdef"
         shipping_address:
+          oneOf:
+            - type: string
+              description: Shipping address as string
+              example: "123 Main St, City, State 12345"
+            - type: object
+              description: Shipping address as structured object
+              properties:
+                line1:
+                  type: string
+                  example: "123 Main St"
+                line2:
+                  type: string
+                  example: "Apt 4B"
+                city:
+                  type: string
+                  example: "New York"
+                state:
+                  type: string
+                  example: "NY"
+                zip:
+                  type: string
+                  example: "10001"
+        delivery_method:
           type: string
-          description: Shipping address
-          example: "123 Main St, City, State 12345"
+          enum: [delivery, pickup]
+          default: delivery
+          description: Delivery method - "delivery" or "pickup"
+          example: "delivery"
         payment_method_id:
           type: string
           format: uuid
@@ -87,6 +112,11 @@ parameters:
           type: boolean
           description: Whether to redeem loyalty points for discount
           default: false
+        promotion_id:
+          type: string
+          format: uuid
+          description: Optional promotion ID to apply discount
+          example: "p1234567-89ab-cdef-0123-456789abcdef"
 
 responses:
   200:
@@ -117,4 +147,5 @@ responses:
     description: Unauthorized
   500:
     description: Server error
+
 
