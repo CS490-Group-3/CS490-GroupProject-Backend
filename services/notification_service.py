@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from config import supabase
 from services.error_logging_service import ErrorLoggingService
 import json
@@ -88,6 +88,62 @@ class NotificationService:
 
                 except Exception as e:
                     print(f"[notify] Failed to resolve service_name: {e}")
+            
+            # Fetch appointment date/time if needed for appointment-related notifications
+            if (("{appointment_date}" in recipient_message or "{appointment_time}" in recipient_message or "{start_at}" in recipient_message) and related_id):
+                try:
+                    appt_lookup = (
+                        supabase.table("appointments")
+                        .select("start_at, salon_id")
+                        .eq("id", related_id)
+                        .single()
+                        .execute()
+                    )
+                    
+                    if appt_lookup.data and appt_lookup.data.get("start_at"):
+                        start_at = appt_lookup.data["start_at"]
+                        salon_id = appt_lookup.data.get("salon_id")
+                        
+                        try:
+                            # Parse ISO format datetime (UTC)
+                            dt_utc = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+                            if dt_utc.tzinfo is None:
+                                dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+                            else:
+                                dt_utc = dt_utc.astimezone(timezone.utc)
+                            
+                            # Get salon timezone and convert
+                            salon_timezone = "America/New_York"  # Default
+                            if salon_id:
+                                try:
+                                    salon_info = supabase.table("salons").select("timezone").eq("id", salon_id).maybe_single().execute()
+                                    if salon_info.data and salon_info.data.get("timezone"):
+                                        salon_timezone = salon_info.data["timezone"]
+                                except Exception:
+                                    pass  # Use default
+                            
+                            # Convert to salon's timezone
+                            try:
+                                from zoneinfo import ZoneInfo
+                                salon_tz = ZoneInfo(salon_timezone)
+                                dt_local = dt_utc.astimezone(salon_tz)
+                            except Exception:
+                                # Fallback to UTC if timezone conversion fails
+                                dt_local = dt_utc
+                            
+                            # Format date as "MM/DD/YYYY"
+                            context["appointment_date"] = dt_local.strftime("%m/%d/%Y")
+                            # Format time as "H:MM AM/PM"
+                            context["appointment_time"] = dt_local.strftime("%I:%M %p").lstrip("0")
+                            # Format start_at as "MM/DD/YY at H:MM AM/PM" for barber notifications
+                            context["start_at"] = dt_local.strftime("%m/%d/%y at %I:%M %p").lstrip("0")
+                        except Exception:
+                            # Fallback to raw value if parsing fails
+                            context["appointment_date"] = start_at
+                            context["appointment_time"] = start_at
+                            context["start_at"] = start_at
+                except Exception as e:
+                    print(f"[notify] Failed to resolve appointment date/time: {e}")
 
             try:
                 recipient_message = recipient_message.format(**context)
@@ -172,13 +228,12 @@ class NotificationService:
         except Exception as e:
             print(f"[Email Error] {e}")
 
-    #when an appointment is made(maybe confirmed) or updated we call to schedule reminder notifications  
+    # Send immediate notification with appointment details when appointment is created/updated
     @staticmethod
-    def schedule_upcoming_appointment(appointment_id):
+    def notify_appointment_details(appointment_id):
         """
-        Create scheduled notifications (1 day, 1 hour, and barber-only 30 min before)
-        for a given appointment.
-        Message format: "Appointment at {salon_name} for {service_name} in X time."
+        Send immediate notification with appointment date/time details.
+        No scheduled reminders - just immediate notification with full details.
         """
         # --- Fetch appointment details ---
         appt = (
@@ -212,56 +267,81 @@ class NotificationService:
 
         salon_name = salon.data["name"] if salon.data else "Salon"
         service_name = service.data["name"] if service.data else "Service"
+        
+        # Get salon timezone
+        salon_timezone = "America/New_York"  # Default
+        try:
+            salon_tz_info = supabase.table("salons").select("timezone").eq("id", appt_data["salon_id"]).maybe_single().execute()
+            if salon_tz_info.data and salon_tz_info.data.get("timezone"):
+                salon_timezone = salon_tz_info.data["timezone"]
+        except Exception:
+            pass  # Use default
 
-        # --- Build reminder times ---
-        appt_time = datetime.fromisoformat(appt_data["start_at"].replace("Z", "+00:00"))
-        reminders = [
-            ("Appointment tomorrow", appt_time - timedelta(days=1)),
-            ("Appointment in 1 hour", appt_time - timedelta(hours=1)),
-        ]
+        # --- Format appointment date/time in salon's timezone ---
+        appt_time_utc = datetime.fromisoformat(appt_data["start_at"].replace("Z", "+00:00"))
+        if appt_time_utc.tzinfo is None:
+            appt_time_utc = appt_time_utc.replace(tzinfo=timezone.utc)
+        else:
+            appt_time_utc = appt_time_utc.astimezone(timezone.utc)
+        
+        # Convert to salon's timezone
+        try:
+            from zoneinfo import ZoneInfo
+            salon_tz = ZoneInfo(salon_timezone)
+            appt_time_local = appt_time_utc.astimezone(salon_tz)
+        except Exception:
+            # Fallback to UTC if timezone conversion fails
+            appt_time_local = appt_time_utc
+        
+        appt_date_str = appt_time_local.strftime("%m/%d/%Y")
+        appt_time_str = appt_time_local.strftime("%I:%M %p").lstrip("0")
 
-        # --- Recipient: customer ---
+        # --- Create immediate notifications ---
         data = []
+        now = datetime.now(timezone.utc)
+        
+        # Customer notification
         customer_id = appt_data.get("customer_id")
         if customer_id:
-            for label, sched_time in reminders:
-                message = f"Reminder: Appointment at {salon_name} for {service_name} {label.lower()}."
-                data.append(
-                    {
-                        "id": str(uuid.uuid4()),
-                        "user_id": customer_id,
-                        "notification_type": "appointment_reminder",
-                        "title": "Upcoming Appointment",
-                        "message": message,
-                        "status": "pending",
-                        "related_id": appointment_id,
-                        "created_at": datetime.utcnow().isoformat(),
-                        "scheduled_for": sched_time.isoformat(),
-                    }
-                )
+            message = f"Your appointment at {salon_name} for {service_name} is scheduled for {appt_date_str} at {appt_time_str}."
+            data.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "user_id": customer_id,
+                    "notification_type": "appointment_reminder",
+                    "title": "Appointment Scheduled",
+                    "message": message,
+                    "status": "sent",
+                    "related_id": appointment_id,
+                    "created_at": now.isoformat(),
+                    "scheduled_for": now.isoformat(),
+                    "sent_at": now.isoformat(),
+                }
+            )
 
-        # --- Barber-only 30-minute reminder ---
+        # Barber notification
         barber_profile_id = appt_data.get("barber_id")
         if barber_profile_id:
             barber_profile = supabase.table("barbers").select("user_id").eq("id", barber_profile_id).single().execute()
             if barber_profile.data:
                 barber_user_id = barber_profile.data["user_id"]
-                thirty_min_before = appt_time - timedelta(minutes=30)
+                message = f"You have an appointment at {salon_name} for {service_name} on {appt_date_str} at {appt_time_str}."
                 data.append(
                     {
                         "id": str(uuid.uuid4()),
                         "user_id": barber_user_id,
                         "notification_type": "appointment_reminder",
-                        "title": "Upcoming Appointment",
-                        "message": f"Reminder: Appointment at {salon_name} for {service_name} in 30 minutes.",
-                        "status": "pending",
+                        "title": "Appointment Scheduled",
+                        "message": message,
+                        "status": "sent",
                         "related_id": appointment_id,
-                        "created_at": datetime.utcnow().isoformat(),
-                        "scheduled_for": thirty_min_before.isoformat(),
+                        "created_at": now.isoformat(),
+                        "scheduled_for": now.isoformat(),
+                        "sent_at": now.isoformat(),
                     }
                 )
 
-        # --- Insert all notifications ---
+        # --- Insert all notifications immediately ---
         if data:
             supabase.table("notifications").insert(data).execute()
 
@@ -467,32 +547,230 @@ class NotificationService:
 
     @staticmethod
     def _record(user_id, event_type, title, message, related_id=None):
+        # Immediate notifications should be marked as "sent" so they show up right away
+        # scheduled_for is set to now so they're immediately available
+        now = datetime.now(timezone.utc)
         return {
             "id": str(uuid.uuid4()),
             "user_id": user_id,
             "notification_type": event_type,
             "title": title,
             "message": message,
-            "status": "pending",
+            "status": "sent",  # Mark as sent immediately so it shows up in app right away
             "related_id": related_id,
-            "created_at": datetime.utcnow().isoformat(),
-            "scheduled_for": datetime.utcnow().isoformat(), 
+            "created_at": now.isoformat(),
+            "scheduled_for": now.isoformat(),  # Set to now so it's immediately available
+            "sent_at": now.isoformat(),  # Mark as sent immediately
         }
 
 
 
     @staticmethod
     def get_user_notifications(user_id):
+        # First, check for upcoming appointments and create notifications on-demand
+        # This creates new notifications if needed
+        NotificationService._check_and_create_upcoming_appointment_notifications(user_id)
+        
+        # Then return all notifications
+        # Use a slightly future time to ensure we catch notifications just created
+        # (accounts for any small timing differences)
+        now_plus_buffer = (datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat()
         rows = (
             supabase.table("notifications")
             .select("*")
             .eq("user_id", user_id)
-            .lte("scheduled_for", datetime.utcnow().isoformat())
+            .lte("scheduled_for", now_plus_buffer)
             .order("created_at", desc=True)
             .execute()
             .data
         )
         return rows
+    
+    @staticmethod
+    def _check_and_create_upcoming_appointment_notifications(user_id):
+        """
+        On-demand check for upcoming appointments and create reminder notifications.
+        This runs when users fetch notifications, so no scheduled job is needed.
+        """
+        try:
+            now = datetime.now(timezone.utc)
+            # Check appointments in the next 24 hours
+            next_24h = now + timedelta(hours=24)
+            
+            # Get user's role to determine how to query appointments
+            user_profile = supabase.table("user_profiles").select("role").eq("user_id", user_id).single().execute()
+            if not user_profile.data:
+                return
+            
+            role = user_profile.data.get("role")
+            upcoming_appointments = []
+            
+            if role == "customer":
+                # Get customer's upcoming appointments (includes in-progress)
+                # Query appointments from 4 hours ago to 24 hours in the future
+                # This catches both in-progress (started but not ended) and truly upcoming
+                past_4h = (now - timedelta(hours=4)).isoformat()
+                appointments = (
+                    supabase.table("appointments")
+                    .select("id, start_at, end_at, salon_id, service_id")
+                    .eq("customer_id", user_id)
+                    .in_("status", ["scheduled", "confirmed"])
+                    .gte("start_at", past_4h)
+                    .lte("start_at", next_24h.isoformat())
+                    .order("start_at", desc=False)
+                    .execute()
+                )
+                if appointments.data:
+                    # Filter to only include appointments that haven't ended yet
+                    upcoming_appointments = []
+                    for apt in appointments.data:
+                        start_at = datetime.fromisoformat(apt["start_at"].replace("Z", "+00:00"))
+                        if start_at.tzinfo is None:
+                            start_at = start_at.replace(tzinfo=timezone.utc)
+                        else:
+                            start_at = start_at.astimezone(timezone.utc)
+                        
+                        # Check if appointment has ended
+                        if apt.get("end_at"):
+                            end_at = datetime.fromisoformat(apt["end_at"].replace("Z", "+00:00"))
+                            if end_at.tzinfo is None:
+                                end_at = end_at.replace(tzinfo=timezone.utc)
+                            else:
+                                end_at = end_at.astimezone(timezone.utc)
+                            if end_at < now:
+                                continue  # Appointment has ended, skip it
+                        else:
+                            # No end_at, assume 30 min duration
+                            end_at = start_at + timedelta(minutes=30)
+                            if end_at < now:
+                                continue  # Appointment has ended, skip it
+                        
+                        upcoming_appointments.append(apt)
+                    
+            elif role == "barber":
+                # Get barber's upcoming appointments (includes in-progress)
+                barber_profile = supabase.table("barbers").select("id").eq("user_id", user_id).maybe_single().execute()
+                if barber_profile.data:
+                    barber_id = barber_profile.data["id"]
+                    past_4h = (now - timedelta(hours=4)).isoformat()
+                    appointments = (
+                        supabase.table("appointments")
+                        .select("id, start_at, end_at, salon_id, service_id")
+                        .eq("barber_id", barber_id)
+                        .in_("status", ["scheduled", "confirmed"])
+                        .gte("start_at", past_4h)
+                        .lte("start_at", next_24h.isoformat())
+                        .order("start_at", desc=False)
+                        .execute()
+                    )
+                    if appointments.data:
+                        # Filter to only include appointments that haven't ended yet
+                        upcoming_appointments = []
+                        for apt in appointments.data:
+                            start_at = datetime.fromisoformat(apt["start_at"].replace("Z", "+00:00"))
+                            if start_at.tzinfo is None:
+                                start_at = start_at.replace(tzinfo=timezone.utc)
+                            else:
+                                start_at = start_at.astimezone(timezone.utc)
+                            
+                            # Check if appointment has ended
+                            if apt.get("end_at"):
+                                end_at = datetime.fromisoformat(apt["end_at"].replace("Z", "+00:00"))
+                                if end_at.tzinfo is None:
+                                    end_at = end_at.replace(tzinfo=timezone.utc)
+                                else:
+                                    end_at = end_at.astimezone(timezone.utc)
+                                if end_at < now:
+                                    continue  # Appointment has ended, skip it
+                            else:
+                                # No end_at, assume 30 min duration
+                                end_at = start_at + timedelta(minutes=30)
+                                if end_at < now:
+                                    continue  # Appointment has ended, skip it
+                            
+                            upcoming_appointments.append(apt)
+            
+            if not upcoming_appointments:
+                return
+            
+            # Get existing reminder notifications for these appointments
+            appointment_ids = [apt["id"] for apt in upcoming_appointments]
+            existing_notifs = (
+                supabase.table("notifications")
+                .select("related_id")
+                .eq("user_id", user_id)
+                .eq("notification_type", "appointment_reminder")
+                .in_("related_id", appointment_ids)
+                .execute()
+            )
+            existing_appointment_ids = {n["related_id"] for n in (existing_notifs.data or [])}
+            
+            # Create notifications for appointments that don't have reminders yet
+            new_notifications = []
+            for apt in upcoming_appointments:
+                if apt["id"] in existing_appointment_ids:
+                    continue  # Already has a notification
+                
+                # Fetch salon and service details
+                salon = supabase.table("salons").select("name, timezone").eq("id", apt["salon_id"]).single().execute()
+                service = supabase.table("services").select("name").eq("id", apt["service_id"]).single().execute()
+                
+                salon_name = salon.data["name"] if salon.data else "Salon"
+                service_name = service.data["name"] if service.data else "Service"
+                salon_timezone = salon.data.get("timezone") if salon.data else "America/New_York"
+                
+                # Format appointment time in salon's timezone
+                appt_time_utc = datetime.fromisoformat(apt["start_at"].replace("Z", "+00:00"))
+                if appt_time_utc.tzinfo is None:
+                    appt_time_utc = appt_time_utc.replace(tzinfo=timezone.utc)
+                else:
+                    appt_time_utc = appt_time_utc.astimezone(timezone.utc)
+                
+                # Convert to salon's timezone
+                try:
+                    from zoneinfo import ZoneInfo
+                    salon_tz = ZoneInfo(salon_timezone)
+                    appt_time_local = appt_time_utc.astimezone(salon_tz)
+                except Exception:
+                    # Fallback to UTC if timezone conversion fails
+                    appt_time_local = appt_time_utc
+                
+                time_until = appt_time_utc - now
+                hours_until = int(time_until.total_seconds() / 3600)
+                minutes_until = int((time_until.total_seconds() % 3600) / 60)
+                
+                if hours_until > 0:
+                    time_str = f"in {hours_until} hour{'s' if hours_until > 1 else ''}"
+                elif minutes_until > 0:
+                    time_str = f"in {minutes_until} minute{'s' if minutes_until > 1 else ''}"
+                else:
+                    time_str = "soon"
+                
+                appt_date_str = appt_time_local.strftime("%m/%d/%Y")
+                appt_time_str = appt_time_local.strftime("%I:%M %p").lstrip("0")
+                
+                message = f"Upcoming appointment at {salon_name} for {service_name} on {appt_date_str} at {appt_time_str} ({time_str})."
+                
+                new_notifications.append({
+                    "id": str(uuid.uuid4()),
+                    "user_id": user_id,
+                    "notification_type": "appointment_reminder",
+                    "title": "Upcoming Appointment",
+                    "message": message,
+                    "status": "sent",
+                    "related_id": apt["id"],
+                    "created_at": now.isoformat(),
+                    "scheduled_for": now.isoformat(),
+                    "sent_at": now.isoformat(),
+                })
+            
+            # Insert new notifications
+            if new_notifications:
+                supabase.table("notifications").insert(new_notifications).execute()
+                
+        except Exception as e:
+            # Don't fail notification fetching if this check fails
+            print(f"[notify] Failed to check upcoming appointments: {e}")
 
     @staticmethod
     def get_unread_count(user_id):
@@ -501,7 +779,7 @@ class NotificationService:
             .select("id", count="exact")
             .eq("user_id", user_id)
             .neq("status", "read")
-            .lte("scheduled_for", datetime.utcnow().isoformat())
+            .lte("scheduled_for", datetime.now(timezone.utc).isoformat())
             .execute()
             .count
         )
@@ -645,17 +923,21 @@ class NotificationService:
             appt_time = ""
             
             try:
-                # Fetch salon name
+                # Fetch salon name and timezone
+                salon_timezone = "America/New_York"  # Default
                 if appt.get("salon_id"):
                     salon_resp = (
                         supabase.table("salons")
-                        .select("name")
+                        .select("name, timezone")
                         .eq("id", appt["salon_id"])
                         .single()
                         .execute()
                     )
-                    if salon_resp.data and salon_resp.data.get("name"):
-                        salon_name = salon_resp.data["name"]
+                    if salon_resp.data:
+                        if salon_resp.data.get("name"):
+                            salon_name = salon_resp.data["name"]
+                        if salon_resp.data.get("timezone"):
+                            salon_timezone = salon_resp.data["timezone"]
                 
                 # Fetch service name
                 if appt.get("service_id"):
@@ -669,11 +951,25 @@ class NotificationService:
                     if service_resp.data and service_resp.data.get("name"):
                         service_name = service_resp.data["name"]
                 
-                # Format appointment time
+                # Format appointment time in salon's timezone
                 if appt.get("start_at"):
                     try:
-                        start_dt = datetime.fromisoformat(appt["start_at"].replace("Z", "+00:00"))
-                        appt_time = start_dt.strftime("%I:%M %p")
+                        start_dt_utc = datetime.fromisoformat(appt["start_at"].replace("Z", "+00:00"))
+                        if start_dt_utc.tzinfo is None:
+                            start_dt_utc = start_dt_utc.replace(tzinfo=timezone.utc)
+                        else:
+                            start_dt_utc = start_dt_utc.astimezone(timezone.utc)
+                        
+                        # Convert to salon's timezone
+                        try:
+                            from zoneinfo import ZoneInfo
+                            salon_tz = ZoneInfo(salon_timezone)
+                            start_dt_local = start_dt_utc.astimezone(salon_tz)
+                        except Exception:
+                            # Fallback to UTC if timezone conversion fails
+                            start_dt_local = start_dt_utc
+                        
+                        appt_time = start_dt_local.strftime("%I:%M %p").lstrip("0")
                     except Exception:
                         pass
             except Exception as e:

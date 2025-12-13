@@ -45,6 +45,11 @@ class AuthService:
                 return None, "Email already registered. Please use a different email or try logging in."
             
             # Sign up user with Supabase Auth
+            # Set redirect_to so email confirmation links go to our callback handler
+            import os
+            frontend_url = os.getenv("FRONTEND_URL", "https://salonica.up.railway.app")
+            redirect_to = f"{frontend_url}/auth/callback"
+            
             response = supabase.auth.sign_up({
                 "email": email,
                 "password": password,
@@ -54,7 +59,8 @@ class AuthService:
                         "last_name": last_name,
                         "phone": phone,
                         "role": role
-                    }
+                    },
+                    "email_redirect_to": redirect_to
                 }
             })
             
@@ -421,18 +427,28 @@ class AuthService:
             return False, str(e)
     
     @staticmethod
-    def request_password_reset(email: str) -> Tuple[bool, Optional[str]]:
+    def request_password_reset(email: str, redirect_to: Optional[str] = None) -> Tuple[bool, Optional[str]]:
         """
         Send password reset email.
         
         Args:
             email: User's email address
+            redirect_to: Optional redirect URL (defaults to callback URL)
         
         Returns:
             Tuple of (success, error_message)
         """
         try:
-            supabase.auth.reset_password_email(email)
+            # Default redirect to callback URL if not provided
+            if not redirect_to:
+                # Use production URL or construct from environment
+                import os
+                frontend_url = os.getenv("FRONTEND_URL", "https://salonica.up.railway.app")
+                redirect_to = f"{frontend_url}/auth/callback"
+            
+            # Pass redirect_to to Supabase so it redirects to our callback handler
+            # Supabase Python client accepts redirect_to as a dict parameter
+            supabase.auth.reset_password_email(email, {"redirect_to": redirect_to})
             return True, None
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')

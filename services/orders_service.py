@@ -306,7 +306,30 @@ class OrdersService:
             # Get or create cart
             cart, error = OrdersService.get_active_cart(user_id, salon_id)
             if error:
-                return None, error
+                # If no cart exists, create one
+                if "No active cart found" in error:
+                    try:
+                        cart_data = {
+                            "user_id": user_id,
+                            "salon_id": salon_id,
+                            "order_status": "cart",
+                            "total_amount": 0.0,
+                            "subtotal": 0.0,
+                            "tax": 0.0,
+                            "shipping_cost": 0.0
+                        }
+                        cart_response = supabase.table("orders").insert(cart_data).execute()
+                        if cart_response is None:
+                            return None, "Database error: No response from database"
+                        if getattr(cart_response, "error", None):
+                            return None, f"Failed to create cart: {cart_response.error.message}"
+                        if not cart_response.data or len(cart_response.data) == 0:
+                            return None, "Failed to create cart: No data returned"
+                        cart = cart_response.data[0]
+                    except Exception as e:
+                        return None, f"Failed to create cart: {str(e)}"
+                else:
+                    return None, error
             
             order_id = cart["id"]
             unit_price = float(product["price"])
@@ -731,6 +754,10 @@ class OrdersService:
             if updated_order.get("order_status") != status:
                 return None, f"Failed to update order status: Expected {status}, got {updated_order.get('order_status')}"
             
+            # Decrement stock when order is confirmed
+            if status == "confirmed":
+                OrdersService._decrement_order_stock(order_id)
+            
             return updated_order, None
             
         except Exception as e:
@@ -1040,6 +1067,9 @@ class OrdersService:
                                     )
                                     # Continue with order cancellation even if transaction creation fails
             
+            # Restore stock before updating order status to cancelled
+            OrdersService._restore_order_stock(order_id)
+            
             # Update order status to cancelled
             updated_order, error = OrdersService.update_order_status(
                 order_id,
@@ -1076,6 +1106,97 @@ class OrdersService:
             ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
     
+    @staticmethod
+    def _decrement_order_stock(order_id: str):
+        """
+        Decrement stock quantities for all products in an order when it's confirmed.
+        """
+        try:
+            # Get all order items
+            items_response = supabase.table("order_items")\
+                .select("product_id, quantity")\
+                .eq("order_id", order_id)\
+                .execute()
+            
+            if not items_response or getattr(items_response, "error", None) or not items_response.data:
+                return  # No items or error, skip stock update
+            
+            # Decrement stock for each product
+            for item in items_response.data:
+                product_id = item.get("product_id")
+                quantity = item.get("quantity", 0)
+                
+                if not product_id or quantity <= 0:
+                    continue
+                
+                # Get current product stock
+                product_response = supabase.table("products")\
+                    .select("id, stock_quantity")\
+                    .eq("id", product_id)\
+                    .maybe_single()\
+                    .execute()
+                
+                if product_response and not getattr(product_response, "error", None) and product_response.data:
+                    product = product_response.data
+                    current_stock = product.get("stock_quantity")
+                    
+                    # Only decrement if stock is tracked (not None)
+                    if current_stock is not None:
+                        new_stock = max(0, current_stock - quantity)
+                        supabase.table("products")\
+                            .update({"stock_quantity": new_stock})\
+                            .eq("id", product_id)\
+                            .execute()
+        except Exception as e:
+            # Log but don't fail the order confirmation
+            ErrorLoggingService.log_exception(e, severity='medium')
+    
+    @staticmethod
+    def _restore_order_stock(order_id: str):
+        """
+        Restore stock quantities for all products in an order when it's cancelled.
+        Only restores stock if the product still exists (not deleted).
+        """
+        try:
+            # Get all order items
+            items_response = supabase.table("order_items")\
+                .select("product_id, quantity")\
+                .eq("order_id", order_id)\
+                .execute()
+            
+            if not items_response or getattr(items_response, "error", None) or not items_response.data:
+                return  # No items or error, skip stock update
+            
+            # Restore stock for each product
+            for item in items_response.data:
+                product_id = item.get("product_id")
+                quantity = item.get("quantity", 0)
+                
+                if not product_id or quantity <= 0:
+                    continue
+                
+                # Get current product (check if it exists)
+                product_response = supabase.table("products")\
+                    .select("id, stock_quantity")\
+                    .eq("id", product_id)\
+                    .maybe_single()\
+                    .execute()
+                
+                # Only restore if product exists (not deleted)
+                if product_response and not getattr(product_response, "error", None) and product_response.data:
+                    product = product_response.data
+                    current_stock = product.get("stock_quantity")
+                    
+                    # Only restore if stock is tracked (not None)
+                    if current_stock is not None:
+                        new_stock = current_stock + quantity
+                        supabase.table("products")\
+                            .update({"stock_quantity": new_stock})\
+                            .eq("id", product_id)\
+                            .execute()
+        except Exception as e:
+            # Log but don't fail the order cancellation
+            ErrorLoggingService.log_exception(e, severity='medium')
     
     @staticmethod
     def get_salon_orders(

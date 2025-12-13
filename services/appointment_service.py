@@ -16,8 +16,19 @@ class AppointmentService:
         now_iso = datetime.now(timezone.utc).isoformat()
 
         if when == "upcoming":
-            query = query.gte("start_at", now_iso)
+            # Upcoming: Include appointments that haven't ended yet
+            # This includes both truly upcoming AND in-progress appointments
+            # CRITICAL: Exclude completed/cancelled/no_show - these should NEVER be in upcoming
+            # Only include scheduled/confirmed appointments (unless status is explicitly provided)
+            if not status:
+                query = query.in_("status", ["scheduled", "confirmed"])
+            # Include appointments from 4 hours ago onwards to catch in-progress ones
+            # Frontend will filter in-progress client-side from this list
+            past_4h = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+            query = query.gte("start_at", past_4h)
         elif when == "past":
+            # Past: Only appointments that have definitely ended
+            # Filter by start_at < now, then we'll filter out in-progress ones after fetching
             query = query.lt("start_at", now_iso)
 
         if status:
@@ -25,6 +36,79 @@ class AppointmentService:
                 status = [status]
             query = query.in_("status", status)
         return query
+    
+    @staticmethod
+    def _filter_past_appointments(appointments: List[dict]) -> List[dict]:
+        """
+        Filter out in-progress appointments from past appointments list.
+        An appointment is past if:
+        - end_at exists and end_at < now, OR
+        - end_at is NULL and (start_at + duration) < now, OR
+        - status is completed/no_show/cancelled (definitely past)
+        """
+        now = datetime.now(timezone.utc)
+        past_appointments = []
+        
+        for apt in appointments:
+            status = apt.get("status", "").lower()
+            start_at = apt.get("start_at")
+            end_at = apt.get("end_at")
+            # Get duration from service or default to 30
+            duration_minutes = apt.get("duration_minutes")
+            if not duration_minutes and apt.get("services"):
+                duration_minutes = apt.get("services", {}).get("duration_minutes")
+            if not duration_minutes:
+                duration_minutes = 30
+            
+            # If status is completed/no_show/cancelled, it's definitely past
+            if status in ["completed", "no_show", "cancelled"]:
+                past_appointments.append(apt)
+                continue
+            
+            # If status is scheduled/confirmed, check if it has actually ended
+            if status in ["scheduled", "confirmed"]:
+                if not start_at:
+                    continue  # Skip if no start time
+                
+                try:
+                    start_dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+                    if start_dt.tzinfo is None:
+                        start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    else:
+                        start_dt = start_dt.astimezone(timezone.utc)
+                    
+                    # Calculate end time
+                    if end_at:
+                        end_dt = datetime.fromisoformat(end_at.replace("Z", "+00:00"))
+                        if end_dt.tzinfo is None:
+                            end_dt = end_dt.replace(tzinfo=timezone.utc)
+                        else:
+                            end_dt = end_dt.astimezone(timezone.utc)
+                    else:
+                        # Calculate from start_at + duration
+                        end_dt = start_dt + timedelta(minutes=duration_minutes)
+                    
+                    # Only include if end time has passed
+                    if end_dt < now:
+                        past_appointments.append(apt)
+                except Exception:
+                    # If we can't parse dates, skip this appointment
+                    continue
+            else:
+                # For other statuses, include if start_at < now
+                if start_at:
+                    try:
+                        start_dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+                        if start_dt.tzinfo is None:
+                            start_dt = start_dt.replace(tzinfo=timezone.utc)
+                        else:
+                            start_dt = start_dt.astimezone(timezone.utc)
+                        if start_dt < now:
+                            past_appointments.append(apt)
+                    except Exception:
+                        continue
+        
+        return past_appointments
     
     @staticmethod
     def _paginate(query, page: int, limit: int): 
@@ -837,56 +921,59 @@ class AppointmentService:
                             )
                 
                 # Remove loyalty points that were earned for this appointment
-                # Points are awarded when payment is completed, so we need to reverse them on cancellation
-                trans_response = supabase.table("loyalty_transactions")\
-                    .select("id, points, user_id, salon_id")\
-                    .eq("appointment_id", appointment_id)\
-                    .eq("transaction_type", "earned")\
-                    .execute()
-                
-                if trans_response.data:
-                    for trans in trans_response.data:
-                        # Skip if this is the refund transaction we just created
-                        if "refunded" in trans.get("description", "").lower():
-                            continue
+                # Points are only awarded when appointment is marked as "completed"
+                # So we should only remove points if the appointment was previously completed
+                # If appointment was never completed, no points were awarded, so nothing to remove
+                if old_status == "completed":
+                    trans_response = supabase.table("loyalty_transactions")\
+                        .select("id, points, user_id, salon_id")\
+                        .eq("appointment_id", appointment_id)\
+                        .eq("transaction_type", "earned")\
+                        .execute()
+                    
+                    if trans_response.data:
+                        for trans in trans_response.data:
+                            # Skip if this is the refund transaction we just created
+                            if "refunded" in trans.get("description", "").lower():
+                                continue
+                                
+                            user_id = trans["user_id"]
+                            salon_id = trans["salon_id"]
+                            points = trans["points"]
                             
-                        user_id = trans["user_id"]
-                        salon_id = trans["salon_id"]
-                        points = trans["points"]
-                        
-                        # Get current balance
-                        balance, error = LoyaltyService.get_user_loyalty_balance(user_id, salon_id)
-                        if error or not balance:
-                            continue
-                        
-                        current_balance = balance.get("points_balance", 0)
-                        new_balance = max(0, current_balance - points)  # Don't go negative
-                        
-                        # Update balance
-                        supabase.table("loyalty_balances")\
-                            .update({
-                                "points_balance": new_balance,
-                                "lifetime_points_earned": max(0, balance.get("lifetime_points_earned", 0) - points),
-                                "updated_at": datetime.now(timezone.utc).isoformat()
-                            })\
-                            .eq("id", balance["id"])\
-                            .execute()
-                        
-                        # Create reversal transaction record
-                        # Use "expired" type with negative points to indicate points removed
-                        transaction_data = {
-                            "id": str(uuid.uuid4()),
-                            "user_id": user_id,
-                            "salon_id": salon_id,
-                            "transaction_type": "expired",
-                            "points": -points,  # Negative to show deduction
-                            "appointment_id": appointment_id,
-                            "balance_after": new_balance,
-                            "description": f"Points removed due to appointment cancellation"
-                        }
-                        supabase.table("loyalty_transactions")\
-                            .insert(transaction_data)\
-                            .execute()
+                            # Get current balance
+                            balance, error = LoyaltyService.get_user_loyalty_balance(user_id, salon_id)
+                            if error or not balance:
+                                continue
+                            
+                            current_balance = balance.get("points_balance", 0)
+                            new_balance = max(0, current_balance - points)  # Don't go negative
+                            
+                            # Update balance
+                            supabase.table("loyalty_balances")\
+                                .update({
+                                    "points_balance": new_balance,
+                                    "lifetime_points_earned": max(0, balance.get("lifetime_points_earned", 0) - points),
+                                    "updated_at": datetime.now(timezone.utc).isoformat()
+                                })\
+                                .eq("id", balance["id"])\
+                                .execute()
+                            
+                            # Create reversal transaction record
+                            # Use "expired" type with negative points to indicate points removed
+                            transaction_data = {
+                                "id": str(uuid.uuid4()),
+                                "user_id": user_id,
+                                "salon_id": salon_id,
+                                "transaction_type": "expired",
+                                "points": -points,  # Negative to show deduction
+                                "appointment_id": appointment_id,
+                                "balance_after": new_balance,
+                                "description": f"Points removed due to appointment cancellation"
+                            }
+                            supabase.table("loyalty_transactions")\
+                                .insert(transaction_data)\
+                                .execute()
             except Exception as e:
                 # Log but don't fail appointment cancellation
                 ErrorLoggingService.log_exception(
@@ -1356,8 +1443,49 @@ class AppointmentService:
             # Exclude cancelled appointments from past count
             if when == "past":
                 count_query = count_query.neq("status", "cancelled")
-            count_response = count_query.execute()
-            total_count = count_response.count if hasattr(count_response, "count") else 0
+            
+            # For past appointments, we need to filter out in-progress ones
+            # So we need to fetch all past appointments, filter, then sort and paginate
+            if when == "past":
+                # Fetch all past appointments (without pagination) to filter properly
+                all_past_query = (
+                    supabase.table("appointments")
+                    .select("*")
+                    .eq("customer_id", customer_id)
+                )
+                all_past_query = AppointmentService._apply_filters(all_past_query, when, status)
+                all_past_query = all_past_query.neq("status", "cancelled")
+                # Sort by start_at before fetching (to preserve order)
+                all_past_query = all_past_query.order("start_at", desc=(sort_order.lower() == "desc"))
+                all_past_response = all_past_query.execute()
+                if all_past_response.data:
+                    hydrated = AppointmentService._hydrate_appointments(all_past_response.data)
+                    filtered = AppointmentService._filter_past_appointments(hydrated)
+                    # Sort filtered results by start_at (handle missing dates)
+                    def get_start_at(apt):
+                        start_at = apt.get("start_at")
+                        if not start_at:
+                            return datetime.min.replace(tzinfo=timezone.utc)
+                        try:
+                            dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            return dt.astimezone(timezone.utc)
+                        except Exception:
+                            return datetime.min.replace(tzinfo=timezone.utc)
+                    filtered.sort(key=get_start_at, reverse=(sort_order.lower() == "desc"))
+                    total_count = len(filtered)
+                    # Now apply pagination to filtered and sorted results
+                    start_idx = (page - 1) * limit
+                    end_idx = start_idx + limit
+                    data = filtered[start_idx:end_idx]
+                    return data, None, total_count
+                else:
+                    total_count = 0
+                    return [], None, 0
+            else:
+                count_response = count_query.execute()
+                total_count = count_response.count if hasattr(count_response, "count") else 0
             
             # Get paginated data
             query = (
@@ -1405,8 +1533,48 @@ class AppointmentService:
             # Exclude cancelled appointments from past count
             if when == "past":
                 count_query = count_query.neq("status", "cancelled")
-            count_response = count_query.execute()
-            total_count = count_response.count if hasattr(count_response, "count") else 0
+            
+            # For past appointments, we need to filter out in-progress ones
+            if when == "past":
+                # Fetch all past appointments (without pagination) to filter properly
+                all_past_query = (
+                    supabase.table("appointments")
+                    .select("*")
+                    .eq("barber_id", barber_id)
+                )
+                all_past_query = AppointmentService._apply_filters(all_past_query, when, status)
+                all_past_query = all_past_query.neq("status", "cancelled")
+                # Sort by start_at before fetching (to preserve order)
+                all_past_query = all_past_query.order("start_at", desc=(sort_order.lower() == "desc"))
+                all_past_response = all_past_query.execute()
+                if all_past_response.data:
+                    hydrated = AppointmentService._hydrate_appointments(all_past_response.data)
+                    filtered = AppointmentService._filter_past_appointments(hydrated)
+                    # Sort filtered results by start_at (handle missing dates)
+                    def get_start_at(apt):
+                        start_at = apt.get("start_at")
+                        if not start_at:
+                            return datetime.min.replace(tzinfo=timezone.utc)
+                        try:
+                            dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            return dt.astimezone(timezone.utc)
+                        except Exception:
+                            return datetime.min.replace(tzinfo=timezone.utc)
+                    filtered.sort(key=get_start_at, reverse=(sort_order.lower() == "desc"))
+                    total_count = len(filtered)
+                    # Now apply pagination to filtered and sorted results
+                    start_idx = (page - 1) * limit
+                    end_idx = start_idx + limit
+                    data = filtered[start_idx:end_idx]
+                    return data, None, total_count
+                else:
+                    total_count = 0
+                    return [], None, 0
+            else:
+                count_response = count_query.execute()
+                total_count = count_response.count if hasattr(count_response, "count") else 0
             
             # Get paginated data
             query = (
@@ -1455,8 +1623,49 @@ class AppointmentService:
             if customer_id:
                 count_query = count_query.eq("customer_id", customer_id)
             count_query = AppointmentService._apply_filters(count_query, when, status)
-            count_response = count_query.execute()
-            total_count = count_response.count if hasattr(count_response, "count") else 0
+            
+            # For past appointments, we need to filter out in-progress ones
+            if when == "past":
+                # Fetch all past appointments (without pagination) to filter properly
+                all_past_query = (
+                    supabase.table("appointments")
+                    .select("*")
+                    .in_("salon_id", salon_ids)
+                )
+                if customer_id:
+                    all_past_query = all_past_query.eq("customer_id", customer_id)
+                all_past_query = AppointmentService._apply_filters(all_past_query, when, status)
+                # Sort by start_at before fetching (to preserve order)
+                all_past_query = all_past_query.order("start_at", desc=(sort_order.lower() == "desc"))
+                all_past_response = all_past_query.execute()
+                if all_past_response.data:
+                    hydrated = AppointmentService._hydrate_appointments(all_past_response.data)
+                    filtered = AppointmentService._filter_past_appointments(hydrated)
+                    # Sort filtered results by start_at (handle missing dates)
+                    def get_start_at(apt):
+                        start_at = apt.get("start_at")
+                        if not start_at:
+                            return datetime.min.replace(tzinfo=timezone.utc)
+                        try:
+                            dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            return dt.astimezone(timezone.utc)
+                        except Exception:
+                            return datetime.min.replace(tzinfo=timezone.utc)
+                    filtered.sort(key=get_start_at, reverse=(sort_order.lower() == "desc"))
+                    total_count = len(filtered)
+                    # Now apply pagination to filtered and sorted results
+                    start_idx = (page - 1) * limit
+                    end_idx = start_idx + limit
+                    data = filtered[start_idx:end_idx]
+                    return data, None, total_count
+                else:
+                    total_count = 0
+                    return [], None, 0
+            else:
+                count_response = count_query.execute()
+                total_count = count_response.count if hasattr(count_response, "count") else 0
             
             # Get paginated data
             query = (
@@ -1505,8 +1714,49 @@ class AppointmentService:
             if customer_id:
                 count_query = count_query.eq("customer_id", customer_id)
             count_query = AppointmentService._apply_filters(count_query, when, status)
-            count_response = count_query.execute()
-            total_count = count_response.count if hasattr(count_response, "count") else 0
+            
+            # For past appointments, we need to filter out in-progress ones
+            if when == "past":
+                # Fetch all past appointments (without pagination) to filter properly
+                all_past_query = supabase.table("appointments").select("*")
+                if salon_id:
+                    all_past_query = all_past_query.eq("salon_id", salon_id)
+                if barber_id:
+                    all_past_query = all_past_query.eq("barber_id", barber_id)
+                if customer_id:
+                    all_past_query = all_past_query.eq("customer_id", customer_id)
+                all_past_query = AppointmentService._apply_filters(all_past_query, when, status)
+                # Sort by start_at before fetching (to preserve order)
+                all_past_query = all_past_query.order("start_at", desc=(sort_order.lower() == "desc"))
+                all_past_response = all_past_query.execute()
+                if all_past_response.data:
+                    hydrated = AppointmentService._hydrate_appointments(all_past_response.data)
+                    filtered = AppointmentService._filter_past_appointments(hydrated)
+                    # Sort filtered results by start_at (handle missing dates)
+                    def get_start_at(apt):
+                        start_at = apt.get("start_at")
+                        if not start_at:
+                            return datetime.min.replace(tzinfo=timezone.utc)
+                        try:
+                            dt = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            return dt.astimezone(timezone.utc)
+                        except Exception:
+                            return datetime.min.replace(tzinfo=timezone.utc)
+                    filtered.sort(key=get_start_at, reverse=(sort_order.lower() == "desc"))
+                    total_count = len(filtered)
+                    # Now apply pagination to filtered and sorted results
+                    start_idx = (page - 1) * limit
+                    end_idx = start_idx + limit
+                    data = filtered[start_idx:end_idx]
+                    return data, None, total_count
+                else:
+                    total_count = 0
+                    return [], None, 0
+            else:
+                count_response = count_query.execute()
+                total_count = count_response.count if hasattr(count_response, "count") else 0
             
             # Get paginated data
             query = supabase.table("appointments").select("*")

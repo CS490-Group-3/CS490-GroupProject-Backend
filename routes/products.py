@@ -20,17 +20,25 @@ def list_products_route():
     {
         salon_id: UUID,
         category_id: list(UUID) (optional)
-        example:/api/products?salon_id=<salon_id>&category_id=<category_id1>&category_id=<category_id2>
+        include_inactive: bool (optional, for salon owners to see all products)
+        example:/api/products?salon_id=<salon_id>&category_id=<category_id1>&category_id=<category_id2>&include_inactive=true
     }
     """
     try:
-        
+        user = get_current_user()
+        user_role = user.get("role")
         salon_id = request.args.get("salon_id", default=None)
         category_ids = request.args.getlist("category_id")
+        include_inactive = request.args.get("include_inactive", "false").lower() == "true"
+        
+        # Only allow include_inactive for salon owners
+        if include_inactive and user_role not in ["salon_owner", "owner", "admin"]:
+            include_inactive = False
+        
         print("category_ids:", category_ids)
         if not salon_id:
             return jsonify({"error": "Missing 'salon_id'"}), 400
-        products = ProductService.list_products(salon_id, category_ids)
+        products = ProductService.list_products(salon_id, category_ids, include_inactive=include_inactive)
         if products[0] is None:
             return jsonify({"message": "No products found"}), 200
         products_response = [ProductResponse.model_validate(p).model_dump() for p in products[0]]
