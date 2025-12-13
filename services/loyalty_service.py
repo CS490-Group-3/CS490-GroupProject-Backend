@@ -993,7 +993,8 @@ class LoyaltyService:
             if promotion_id:
                 from services.promotion_service import PromotionService
                 # Check if user is eligible for this promotion (must be in promotional_recipients)
-                promotions, error = PromotionService.get_active_promotions(salon_id, payment_amount, user_id=user_id)
+                # Filter by context: appointments for appointment payments
+                promotions, error = PromotionService.get_active_promotions(salon_id, payment_amount, user_id=user_id, context="appointments")
                 if error:
                     return None, f"Failed to validate promotion: {error}"
                 
@@ -1364,7 +1365,8 @@ class LoyaltyService:
             if promotion_id:
                 from services.promotion_service import PromotionService
                 # Check if user is eligible for this promotion (must be in promotional_recipients)
-                promotions, error = PromotionService.get_active_promotions(salon_id, payment_amount, user_id=user_id)
+                # Filter by context: products for order payments
+                promotions, error = PromotionService.get_active_promotions(salon_id, payment_amount, user_id=user_id, context="products")
                 if error:
                     return None, f"Failed to validate promotion: {error}"
                 

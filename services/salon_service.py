@@ -132,12 +132,14 @@ class SalonService:
     def list_salons(search=None, location=None, service_names=None, sort="top"):
         """
         Return verified salons with optional filters.
+        Only returns salons that have completed setup (setup_complete=true).
         """
         try:
             response = (
                 supabase.table("salons")
                 .select("*")
                 .eq("status", "verified")
+                .eq("setup_complete", True)
                 .order("created_at", desc=False)
                 .execute()
             )
@@ -239,7 +241,7 @@ class SalonService:
         try:
             resp = (
                 supabase.table("salons")
-                .select("id,name,status,created_at,city,state,zip_code,address,phone,email,description,timezone,logo_url,license_url")
+                .select("id,name,status,created_at,city,state,zip_code,address,phone,email,description,timezone,logo_url,license_url,rejection_reason,setup_complete")
                 .eq("owner_id", owner_id)
                 .order("created_at", desc=True)
                 .limit(1)
@@ -313,6 +315,7 @@ class SalonService:
                 "logo_url": salon.get("logo_url"),
                 "license_url": salon.get("license_url"),
                 "status": salon.get("status"),
+                "rejection_reason": salon.get("rejection_reason"),
                 "services": services or [],
                 "employees": employees or [],
                 "hours": hours,
@@ -461,9 +464,27 @@ class SalonService:
                     changed_by=owner_id
                 )
                 
-                # If salon changed, we may need to update availability
-                # For now, availability stays with the barber (they keep their schedule)
-                # If needed, we can reset availability based on new salon hours
+                # If salon changed, sync availability to new salon's hours
+                # Get new salon's hours and sync barber availability
+                if old_salon_id and str(old_salon_id) != str(salon_id):
+                    try:
+                        hours_resp = supabase.table("salon_hours").select("*").eq("salon_id", salon_id).execute()
+                        if not getattr(hours_resp, "error", None) and hours_resp.data:
+                            salon_hours_map = {h["day_of_week"]: h for h in hours_resp.data}
+                            from services.schedule_service import ScheduleService
+                            # Sync only this barber to new salon's hours
+                            ScheduleService.sync_barber_availability_to_salon_hours(
+                                salon_id=salon_id, 
+                                salon_hours_map=salon_hours_map, 
+                                barber_id=barber_id
+                            )
+                    except Exception as e:
+                        # Don't fail rehiring if availability sync fails
+                        ErrorLoggingService.log_exception(e, severity='medium')
+                # If same salon, availability is already correct (preserved from before)
+                
+                # Check and update setup completion status
+                SalonService._check_and_update_setup_complete(salon_id)
                 
                 return {"message": "Service provider rehired successfully"}, None
             else:
@@ -491,55 +512,133 @@ class SalonService:
                 created_id = response.data[0]["id"]
                 
                 # Log audit
-                if created_id:
-                    AuditLoggingService.log_audit(
-                        table_name='barbers',
-                        record_id=created_id,
-                        action='INSERT',
-                        new_values=barber_data,
-                        changed_by=owner_id
-                    )
+                AuditLoggingService.log_audit(
+                    table_name='barbers',
+                    record_id=created_id,
+                    action='INSERT',
+                    new_values=barber_data,
+                    changed_by=owner_id
+                )
 
-                    # Initialize default barber availability based on salon_hours
-                    try:
-                        hours_resp = (
-                            supabase.table("salon_hours")
-                            .select("day_of_week,open_time,close_time,is_closed")
-                            .eq("salon_id", salon_id)
-                            .execute()
+                # Check and update setup completion status
+                SalonService._check_and_update_setup_complete(salon_id)
+                
+                # CRITICAL: Initialize default barber availability based on salon_hours
+                # MUST create entries for ALL 7 days (0=Sunday to 6=Saturday)
+                # Closed salon days → is_active=False, open days → is_active=True with salon hours
+                # This MUST happen for every new barber - errors should be logged but not block barber creation
+                try:
+                    from services.schedule_service import ScheduleService
+                    
+                    hours_resp = (
+                        supabase.table("salon_hours")
+                        .select("day_of_week,open_time,close_time,is_closed")
+                        .eq("salon_id", salon_id)
+                        .execute()
+                    )
+                    
+                    # Normalize time format helper
+                    def normalize_time(time_str):
+                        """Convert HH:MM to HH:MM:SS if needed"""
+                        if not time_str:
+                            return "00:00:00"
+                        if isinstance(time_str, str):
+                            parts = time_str.split(":")
+                            if len(parts) == 2:
+                                # HH:MM format - add :00
+                                return f"{time_str}:00"
+                            elif len(parts) == 3:
+                                # Already HH:MM:SS
+                                return time_str
+                        return str(time_str)
+                    
+                    # Create a map of salon hours by day
+                    salon_hours_map = {}
+                    if hours_resp and not getattr(hours_resp, "error", None) and hours_resp.data:
+                        for row in hours_resp.data:
+                            day = row.get("day_of_week")
+                            if day is not None:
+                                salon_hours_map[day] = row
+                    
+                    # ALWAYS create entries for ALL 7 days (0=Sunday to 6=Saturday)
+                    # This ensures every barber has availability entries for every day
+                    # We bypass validation during initialization by directly inserting into the database
+                    initialization_errors = []
+                    for day in range(7):
+                        salon_hour = salon_hours_map.get(day)
+                        
+                        try:
+                            if salon_hour and not salon_hour.get("is_closed"):
+                                # Salon is open on this day - barber available with salon hours
+                                open_time = normalize_time(salon_hour.get("open_time"))
+                                close_time = normalize_time(salon_hour.get("close_time"))
+                                if open_time and close_time:
+                                    # Direct insert to bypass validation during initialization
+                                    availability_data = {
+                                        "barber_id": created_id,
+                                        "day_of_week": day,
+                                        "start_time": open_time,
+                                        "end_time": close_time,
+                                        "is_active": True
+                                    }
+                                    # Check if entry already exists (upsert)
+                                    existing = supabase.table("barber_availability").select("id").eq("barber_id", created_id).eq("day_of_week", day).execute()
+                                    if existing.data and len(existing.data) > 0:
+                                        # Update existing
+                                        response = supabase.table("barber_availability").update(availability_data).eq("id", existing.data[0]["id"]).execute()
+                                    else:
+                                        # Insert new
+                                        response = supabase.table("barber_availability").insert(availability_data).execute()
+                                    
+                                    if getattr(response, "error", None) or not getattr(response, "data", None):
+                                        initialization_errors.append(f"Day {day} (open): Insert failed")
+                                        ErrorLoggingService.log_exception(
+                                            Exception(f"Failed to create availability for day {day} (open): {getattr(response, 'error', 'Unknown error')}"),
+                                            severity='high'
+                                        )
+                            else:
+                                # Salon is closed on this day OR no salon hour entry - barber unavailable
+                                # Direct insert to bypass validation during initialization
+                                availability_data = {
+                                    "barber_id": created_id,
+                                    "day_of_week": day,
+                                    "start_time": "00:00:00",
+                                    "end_time": "00:00:00",
+                                    "is_active": False
+                                }
+                                # Check if entry already exists (upsert)
+                                existing = supabase.table("barber_availability").select("id").eq("barber_id", created_id).eq("day_of_week", day).execute()
+                                if existing.data and len(existing.data) > 0:
+                                    # Update existing
+                                    response = supabase.table("barber_availability").update(availability_data).eq("id", existing.data[0]["id"]).execute()
+                                else:
+                                    # Insert new
+                                    response = supabase.table("barber_availability").insert(availability_data).execute()
+                                
+                                if getattr(response, "error", None) or not getattr(response, "data", None):
+                                    initialization_errors.append(f"Day {day} (closed): Insert failed")
+                                    ErrorLoggingService.log_exception(
+                                        Exception(f"Failed to create availability for day {day} (closed): {getattr(response, 'error', 'Unknown error')}"),
+                                        severity='high'
+                                    )
+                        except Exception as day_error:
+                            initialization_errors.append(f"Day {day}: {str(day_error)}")
+                            ErrorLoggingService.log_exception(
+                                Exception(f"Exception creating availability for day {day}: {str(day_error)}"),
+                                severity='high'
+                            )
+                    
+                    if initialization_errors:
+                        ErrorLoggingService.log_exception(
+                            Exception(f"Barber availability initialization had {len(initialization_errors)} errors: {', '.join(initialization_errors)}"),
+                            severity='high'
                         )
-                        # Check if response is None or has an error BEFORE accessing .data
-                        if hours_resp is None:
-                            ErrorLoggingService.log_exception(
-                                Exception("Error fetching salon hours: No response from database"),
-                                severity='medium'
-                            )
-                        elif getattr(hours_resp, "error", None):
-                            ErrorLoggingService.log_exception(
-                                Exception(f"Error fetching salon hours: {hours_resp.error}"),
-                                severity='medium'
-                            )
-                        else:
-                            # Safe to access .data now
-                            for row in (hours_resp.data or []):
-                                if row.get("is_closed"):
-                                    continue
-                                day = row.get("day_of_week")
-                                open_time = row.get("open_time")
-                                close_time = row.get("close_time")
-                                if day is None or not open_time or not close_time:
-                                    continue
-                                # Best-effort: create availability; ignore errors such as duplicates
-                                ScheduleService.create_availability(
-                                    barber_id=created_id,
-                                    day_of_week=day,
-                                    start_time=open_time,
-                                    end_time=close_time,
-                                    is_active=True,
-                                )
-                    except Exception as e:
-                        # Don't block adding the barber if availability seeding fails
-                        ErrorLoggingService.log_exception(e, severity='medium')
+                except Exception as e:
+                    # Log but don't block adding the barber if availability seeding fails
+                    ErrorLoggingService.log_exception(
+                        Exception(f"Failed to initialize barber availability (outer exception): {str(e)}"),
+                        severity='high'
+                    )
                 
                 return {"message": "Service provider added to salon successfully"}, None
         except Exception as e:
@@ -572,6 +671,9 @@ class SalonService:
                     new_values=service_data,
                     changed_by=None  # Could get from context if needed
                 )
+            
+            # Check and update setup completion status
+            SalonService._check_and_update_setup_complete(salon_id)
             
             return {"message": "Service created successfully"}, None
         except Exception as e:
@@ -828,8 +930,11 @@ class SalonService:
                 if not is_closed:
                     if not norm_open or not norm_close:
                         return None, f"open_time and close_time are required for day {day}"
-                    if norm_open >= norm_close:
-                        return None, f"open_time must be before close_time for day {day}"
+                    # Allow any time combination:
+                    # - 24/7: open_time == close_time (e.g., "00:00:00" to "00:00:00")
+                    # - Cross-midnight: close_time < open_time (e.g., "22:00:00" to "02:00:00")
+                    # - Normal: open_time < close_time (e.g., "09:00:00" to "18:00:00")
+                    # No validation needed - all combinations are valid
                 else:
                     # DB has NOT NULL on open_time/close_time; store zeros for closed days
                     norm_open = "00:00:00"
@@ -864,6 +969,24 @@ class SalonService:
             if getattr(insert_resp, "error", None):
                 print(f"[salon_hours] insert failed for salon_id={salon_id}: {insert_resp.error} payload_count={len(normalized)} payload={normalized}")
                 return None, f"salon_hours insert failed: {insert_resp.error}"
+            
+            # Sync all barber availability to match new salon hours
+            # Create a map of day_of_week to salon hour for easy lookup
+            salon_hours_map = {entry["day_of_week"]: entry for entry in normalized}
+            from services.schedule_service import ScheduleService
+            sync_success, sync_errors, sync_error_list = ScheduleService.sync_barber_availability_to_salon_hours(
+                salon_id, salon_hours_map
+            )
+            # Log sync results but don't fail the salon hours update if sync has errors
+            if sync_errors > 0:
+                ErrorLoggingService.log_exception(
+                    Exception(f"Barber availability sync had {sync_errors} errors: {sync_error_list}"),
+                    severity='medium'
+                )
+            
+            # Check and update setup completion status
+            SalonService._check_and_update_setup_complete(salon_id)
+            
             return normalized, None
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
@@ -889,8 +1012,11 @@ class SalonService:
             if not is_closed:
                 if not norm_open or not norm_close:
                     return None, "open_time and close_time are required when is_closed is false"
-                if norm_open >= norm_close:
-                    return None, "open_time must be before close_time"
+                # Allow any time combination:
+                # - 24/7: open_time == close_time (e.g., "00:00:00" to "00:00:00")
+                # - Cross-midnight: close_time < open_time (e.g., "22:00:00" to "02:00:00")
+                # - Normal: open_time < close_time (e.g., "09:00:00" to "18:00:00")
+                # No validation needed - all combinations are valid
             else:
                 norm_open = "00:00:00"
                 norm_close = "00:00:00"
@@ -920,6 +1046,9 @@ class SalonService:
                 if getattr(ins, "error", None):
                     return None, str(ins.error)
 
+            # Check and update setup completion status
+            SalonService._check_and_update_setup_complete(salon_id)
+
             return row, None
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
@@ -935,10 +1064,67 @@ class SalonService:
                 return None, "day_of_week must be an integer between 0 (Sunday) and 6 (Saturday)"
 
             supabase.table("salon_hours").delete().eq("salon_id", salon_id).eq("day_of_week", day_of_week).execute()
+            
+            # Check and update setup completion status
+            SalonService._check_and_update_setup_complete(salon_id)
+            
             return True, None
         except Exception as e:
             ErrorLoggingService.log_exception(e, severity='high')
             return None, str(e)
+    
+    @staticmethod
+    def _check_and_update_setup_complete(salon_id: str):
+        """
+        Check if salon setup is complete and update setup_complete flag.
+        Setup is complete when:
+        - Has at least one non-closed hour
+        - Has at least one service
+        - Has at least one employee
+        - At least one employee has services assigned
+        """
+        try:
+            # Check if salon is verified (only verified salons can complete setup)
+            salon_resp = supabase.table("salons").select("status").eq("id", salon_id).maybe_single().execute()
+            if not salon_resp.data or salon_resp.data.get("status") != "verified":
+                return  # Only check setup for verified salons
+            
+            # Check hours - at least one non-closed day
+            hours_resp = supabase.table("salon_hours").select("is_closed").eq("salon_id", salon_id).execute()
+            has_hours = False
+            if hours_resp.data:
+                has_hours = any(not h.get("is_closed", True) for h in hours_resp.data)
+            
+            # Check services - at least one service
+            services_resp = supabase.table("services").select("id").eq("salon_id", salon_id).limit(1).execute()
+            has_services = bool(services_resp.data and len(services_resp.data) > 0)
+            
+            # Check employees - at least one active employee
+            employees_resp = supabase.table("barbers").select("id").eq("salon_id", salon_id).eq("is_active", True).execute()
+            has_employees = bool(employees_resp.data and len(employees_resp.data) > 0)
+            
+            # Check if at least one employee has services assigned
+            has_employee_with_services = False
+            if has_employees and employees_resp.data:
+                employee_ids = [e["id"] for e in employees_resp.data]
+                barber_services_resp = (
+                    supabase.table("barber_services")
+                    .select("barber_id")
+                    .in_("barber_id", employee_ids)
+                    .limit(1)
+                    .execute()
+                )
+                has_employee_with_services = bool(barber_services_resp.data and len(barber_services_resp.data) > 0)
+            
+            # Setup is complete if all conditions are met
+            setup_complete = has_hours and has_services and has_employees and has_employee_with_services
+            
+            # Update the salon's setup_complete flag
+            supabase.table("salons").update({"setup_complete": setup_complete}).eq("id", salon_id).execute()
+            
+        except Exception as e:
+            # Don't fail the main operation if setup check fails
+            ErrorLoggingService.log_exception(e, severity='medium')
 
     @staticmethod
     def appeal_salon(salon_id, user_id, updates=None, logo_file=None, license_file=None):
@@ -1064,6 +1250,7 @@ class SalonService:
         
         supabase.table("salons").update({
             "status": "verified",
+            "rejection_reason": None,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", salon_id).execute()
 
@@ -1091,6 +1278,7 @@ class SalonService:
         
         supabase.table("salons").update({
             "status": "rejected",
+            "rejection_reason": reason,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", salon_id).execute()
 
@@ -1223,6 +1411,9 @@ class SalonService:
                 new_values=relationship_data,
                 changed_by=owner_id
             )
+
+            # Check and update setup completion status
+            SalonService._check_and_update_setup_complete(salon_id)
 
             return {"message": "Service added to barber successfully"}, None
 

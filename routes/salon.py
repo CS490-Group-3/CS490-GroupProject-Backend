@@ -298,7 +298,8 @@ def get_active_promotions(salon_id):
         user = get_current_user()
         user_id = user.get('sub') or user.get('id')
         purchase_amount = float(request.args.get("purchase_amount", 0))
-        promotions, error = PromotionService.get_active_promotions(salon_id, purchase_amount, user_id=user_id)
+        context = request.args.get("context")  # "products" or "appointments" or None for both
+        promotions, error = PromotionService.get_active_promotions(salon_id, purchase_amount, user_id=user_id, context=context)
         if error:
             log_service_error(error)
             return jsonify({"error": error}), 400
@@ -1160,45 +1161,69 @@ def set_employee_availability(salon_id, barber_id):
         
         from models.schedule import BarberAvailabilityCreateRequest, BarberAvailabilityUpdateRequest
         
-        if request.method == "POST":
-            # Create new availability
+        # Since create_availability now upserts, we can use it for both POST and PATCH
+        # But for PATCH with IDs, we'll use update_availability for explicit updates
+        if request.method == "PATCH":
+            # Update existing availability (when IDs are provided)
+            for availability in availabilities:
+                if "id" in availability:
+                    # Use update_availability for entries with IDs
+                    data = BarberAvailabilityUpdateRequest(**availability)
+                    if isinstance(data.start_time, time):
+                        start_time = data.start_time.strftime("%H:%M:%S")
+                    elif data.start_time is None:
+                        start_time = "00:00:00"  # Default for closed days
+                    else:
+                        start_time = data.start_time
+                    if isinstance(data.end_time, time):
+                        end_time = data.end_time.strftime("%H:%M:%S")
+                    elif data.end_time is None:
+                        end_time = "00:00:00"  # Default for closed days
+                    else:
+                        end_time = data.end_time
+                    update = {
+                        "day_of_week": data.day_of_week,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "is_active": data.is_active
+                    }
+                    result, error = ScheduleService.update_availability(
+                        availability_id=data.id,
+                        update_data=update
+                    )
+                    if error:
+                        return jsonify({"error": error}), 400
+                else:
+                    # No ID provided, use upsert via create_availability
+                    data = BarberAvailabilityCreateRequest(**availability)
+                    start_time = data.start_time.strftime("%H:%M:%S") if isinstance(data.start_time, time) else (data.start_time or "00:00:00")
+                    end_time = data.end_time.strftime("%H:%M:%S") if isinstance(data.end_time, time) else (data.end_time or "00:00:00")
+                    result, error = ScheduleService.create_availability(
+                        barber_id=barber_id,
+                        day_of_week=data.day_of_week,
+                        start_time=start_time,
+                        end_time=end_time,
+                        is_active=data.is_active
+                    )
+                    if error:
+                        return jsonify({"error": error}), 400
+            return jsonify({"message": "Availability updated successfully"}), 200
+        else:
+            # POST: Create new availability (upserts if exists)
             for availability in availabilities:
                 data = BarberAvailabilityCreateRequest(**availability)
+                start_time = data.start_time.strftime("%H:%M:%S") if isinstance(data.start_time, time) else (data.start_time or "00:00:00")
+                end_time = data.end_time.strftime("%H:%M:%S") if isinstance(data.end_time, time) else (data.end_time or "00:00:00")
                 result, error = ScheduleService.create_availability(
                     barber_id=barber_id,
                     day_of_week=data.day_of_week,
-                    start_time=data.start_time,
-                    end_time=data.end_time,
+                    start_time=start_time,
+                    end_time=end_time,
                     is_active=data.is_active
                 )
                 if error:
                     return jsonify({"error": error}), 400
             return jsonify({"message": "Availability created successfully"}), 201
-        else:
-            # Update existing availability
-            for availability in availabilities:
-                data = BarberAvailabilityUpdateRequest(**availability)
-                if isinstance(data.start_time, time):
-                    start_time = data.start_time.strftime("%H:%M:%S")
-                else:
-                    start_time = data.start_time
-                if isinstance(data.end_time, time):
-                    end_time = data.end_time.strftime("%H:%M:%S")
-                else:
-                    end_time = data.end_time
-                update = {
-                    "day_of_week": data.day_of_week,
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "is_active": data.is_active
-                }
-                result, error = ScheduleService.update_availability(
-                    availability_id=data.id,
-                    update_data=update
-                )
-                if error:
-                    return jsonify({"error": error}), 400
-            return jsonify({"message": "Availability updated successfully"}), 200
     except Exception as e:
         log_route_error(e)
         return jsonify({"error": str(e)}), 500

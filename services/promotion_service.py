@@ -36,6 +36,7 @@ class PromotionService:
             "min_visits": data.get("min_visits"),  # For custom targeting
             "min_loyalty_points": data.get("min_loyalty_points"),  # For custom targeting
             "targeting_logic": data.get("targeting_logic"),  # "and" or "or" for custom targeting
+            "applies_to": data.get("applies_to", "both"),  # "products", "appointments", or "both"
         }
 
         # --- Insert offer (service handles the DB, not route)
@@ -136,7 +137,8 @@ class PromotionService:
             update_record = {}
             allowed_fields = ["title", "description", "discount_type", "discount_value", 
                             "min_purchase_amount", "valid_from", "valid_until", "is_active",
-                            "target_audience", "min_visits", "min_loyalty_points", "targeting_logic"]
+                            "target_audience", "min_visits", "min_loyalty_points", "targeting_logic",
+                            "applies_to"]
             
             for field in allowed_fields:
                 if field in data:
@@ -220,15 +222,17 @@ class PromotionService:
             return False, f"Failed to delete promotion: {str(e)}"
     
     @staticmethod
-    def get_active_promotions(salon_id, purchase_amount=0.0, user_id=None):
+    def get_active_promotions(salon_id, purchase_amount=0.0, user_id=None, context=None):
         """
         Get active promotional offers for a salon that are currently valid.
         If user_id is provided, only returns promotions the user is eligible for.
+        If context is provided, filters by applies_to field.
         
         Args:
             salon_id: Salon ID
             purchase_amount: Purchase amount to check min_purchase_amount requirement
             user_id: Optional user ID to check eligibility (must be in promotional_recipients)
+            context: Optional context - "products" or "appointments" to filter by applies_to
         
         Returns:
             Tuple of (list of active promotions, error_message)
@@ -238,20 +242,24 @@ class PromotionService:
             
             now = datetime.now(timezone.utc).isoformat()
             
-            # Get promotions that are:
-            # 1. For this salon
-            # 2. is_active = True
-            # 3. valid_from <= now
-            # 4. valid_until >= now
-            # 5. min_purchase_amount <= purchase_amount (if specified)
-            response = supabase.table("promotional_offers")\
+            # Build query
+            query = supabase.table("promotional_offers")\
                 .select("*")\
                 .eq("salon_id", salon_id)\
                 .eq("is_active", True)\
                 .lte("valid_from", now)\
-                .gte("valid_until", now)\
-                .order("created_at", desc=True)\
-                .execute()
+                .gte("valid_until", now)
+            
+            # Filter by applies_to if context is provided
+            if context == "products":
+                # Show promotions that apply to products or both
+                query = query.in_("applies_to", ["products", "both"])
+            elif context == "appointments":
+                # Show promotions that apply to appointments or both
+                query = query.in_("applies_to", ["appointments", "both"])
+            # If context is None, show all (backward compatibility)
+            
+            response = query.order("created_at", desc=True).execute()
             
             if getattr(response, "error", None):
                 return [], response.error.message

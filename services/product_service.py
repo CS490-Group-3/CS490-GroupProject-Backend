@@ -64,6 +64,7 @@ class ProductService:
     def list_products(
         salon_id: Optional[str] = None,
         category_ids: Optional[list] = None,
+        include_inactive: bool = False
     ) -> Tuple[Optional[list], Optional[str]]:
         """
         List products globally or for a specific salon.
@@ -71,12 +72,16 @@ class ProductService:
         Args:
             salon_id: Optional ID of the salon to filter products
             category_id: Optional ID of the product category to filter products
-            is_active: Optional filter for active/inactive products
+            include_inactive: If True, includes inactive products (for salon owners)
         Returns:
             Tuple containing a list of products or None, and an error message or None
         """
         try:
-            query = supabase.table("products").select("*, product_categories(*)").eq("salon_id", salon_id).eq("is_active", True)
+            query = supabase.table("products").select("*, product_categories(*)").eq("salon_id", salon_id)
+            
+            # Only filter by is_active if include_inactive is False (customer view)
+            if not include_inactive:
+                query = query.eq("is_active", True)
 
             response= query.execute()
             data = response.data or []

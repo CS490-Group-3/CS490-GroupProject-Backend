@@ -428,7 +428,9 @@ def test_update_user_role_unauthorized(monkeypatch):
 def test_request_password_reset_success(monkeypatch):
     """Test password reset request."""
     
-    def fake_reset_email(email):
+    def fake_reset_email(email, redirect_to_dict=None):
+        # Accept both email and redirect_to_dict to match actual implementation
+        # Implementation calls: supabase.auth.reset_password_email(email, {"redirect_to": redirect_to})
         pass
     
     monkeypatch.setattr("config.supabase.auth.reset_password_email", fake_reset_email)

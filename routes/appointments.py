@@ -150,15 +150,14 @@ def list_appointments():
     title="New Appointment Created",
     message_templates={
         "user": (
-            "Your appointment has been sent out for confirmation "
+            "Your appointment has been created. Check your notifications for appointment details."
         ),
         "barber": (
-            "A new appointment has been assigned to you scheduled for  {start_at}"
-            
+            "A new appointment has been assigned to you. Check your notifications for appointment details."
         ),
     },
     related_key="id",
-    schedule_func=NotificationService.schedule_upcoming_appointment
+    schedule_func=NotificationService.notify_appointment_details
 )
 @swag_from("../docs/create_appointment.yml")
 def create_appointment():
@@ -189,7 +188,7 @@ def create_appointment():
     event_type="appointment_creation",
     title="Appointment Updated",
     message_template="The appointment at {salon_name} for {service_name} has been updated.",
-    schedule_func=NotificationService.schedule_upcoming_appointment, 
+    schedule_func=NotificationService.notify_appointment_details, 
 )#notify user and barber upon update 
 @swag_from("../docs/update_appointment.yml")
 def update_appointment():
@@ -240,7 +239,7 @@ def update_appointment():
     recipients=["barber", "user"],
     event_type="appointment_cancellation",
     title="Appointment Cancelled",
-    message_template="The appointment at {salon_name} for {service_name} has been cancelled.",
+    message_template="The appointment at {salon_name} for {service_name} on {appointment_date} at {appointment_time} has been cancelled.",
     related_key="appointment_id",
     schedule_func=None 
 )
